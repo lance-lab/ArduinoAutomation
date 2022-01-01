@@ -38,8 +38,8 @@ void MQTTCallback(char* , byte* , unsigned int);
 
 //SET ETHERNET VARIABLES
 byte Mac[]    = {  0xAE, 0xED, 0xBA, 0xFE, 0xFE, 0xED };
-IPAddress Ip(192, 168, 1, 202);
-IPAddress Servers(192, 168, 1, 101);
+IPAddress Ip(10, 10, 10, 22);
+IPAddress Servers(10, 10, 10, 51);
 EthernetClient EthClient;
 
 //CREATE MQTT CLIENT (SERVER IP, PORT, SUBPROCESS, ETHCLIENT)
@@ -62,7 +62,7 @@ String AnalogInputMapped [2][12] = {
 
 //ASSIGNMENT OF DIGITAL INPUT PORT DO0 = 2
 String DigitalOutputMapped [4][18] = {
-  {"D000",  "DO01", "DO02", "DO03", "DO04", "DO05", "DO06", "DO07", "RO00", "RO01", "RO02", "RO03", "RO04", "RO05", "RO06", "RO07", "RO08", "RO09"},
+  {"DO00",  "DO01", "DO02", "DO03", "DO04", "DO05", "DO06", "DO07", "RO00", "RO01", "RO02", "RO03", "RO04", "RO05", "RO06", "RO07", "RO08", "RO09"},
   {"2",     "3",    "4",    "5",    "6",    "7",    "8",    "9",    "22",   "23",   "24",   "25",   "26",   "27",   "28",   "29",   "30",   "31"},
   {"PORTE", "PORTE","PORTG","PORTE","PORTH","PORTH","PORTH","PORTH","PORTA","PORTA","PORTA","PORTA","PORTA","PORTA","PORTA","PORTA","PORTC","PORTC"},
   {"4",     "5",    "5",    "3",    "3",    "4",    "5",    "6",    "0",    "1",    "2",    "3",    "4",    "5",    "6",    "7",    "7",    "6"}
@@ -72,7 +72,7 @@ String DigitalOutputMapped [4][18] = {
 
 //ASSIGNMENT OF ANALOG IMPUTS TO LIGHT MODULE
 String ModuleLights = "enabled";
-int ModuleLightTrigger = 2;
+int ModuleLightTrigger = 1;
 int InputGroupLightStandard [2] ={54,59};
 
 /*ARRAY THAT MAPS ANALOG IMPUTS TO DIGITAL OUTPUTS
@@ -154,7 +154,7 @@ void setup() {
 
   //INITIATE CONNECTION TO MQTT SERVER IF NOT ESTABLISHED ALREADY. Clients.connected CAN BE "0" - NOT CONNECTED OR "1" - CONNECTED
   if (!Clients.connected()) {
-    if (Clients.connect("ArduinoClient")) {
+    if (Clients.connect("ArduinoMega1","ArduinoUser","ArduinoUser12345")) {
       Clients.publish("Module1CMAOut","hello");
       Clients.subscribe("Module1CMAIn");
     }
@@ -485,6 +485,10 @@ void MQTTCallback(char* topic, byte* payload, unsigned int length) {
 
   }
   // CALL MQTTEventHandlerIn PROCESS SENDING MODULE, PORT, STATUS
+  Serial.println(String(Module));
+  Serial.println(String(Port[0]));
+  Serial.println(String(Status[0]));
+  
   MQTTEventHandlerIn(Module, Port, Status);
 
 }
@@ -561,7 +565,12 @@ void MQTTEventHandlerIn(String Module, String Port[], String Parameter[]) {
     int Index = FindElement(AnalogInputMapped[0],sizeof(AnalogInputMapped[0])/sizeof(*AnalogInputMapped[0]), Port[0]);
     if (Index >= 0) {
       for(int i=0; i<sizeof(InputGroupLightStandard)/sizeof(*InputGroupLightStandard); i++) {
-        if (AnalogInputMapped[1][Index] == String(InputGroupLightStandard[i])) { LightStandard(i,Parameter[0].toInt()); break;}
+        if (AnalogInputMapped[1][Index] == String(InputGroupLightStandard[i])) { 
+          LightStandard(i,Parameter[0].toInt()); 
+            Serial.println(String(i));
+            Serial.println(String(Parameter[0]));
+          break;
+         }
       }   
     }
   }
@@ -676,7 +685,7 @@ void loop() {
     PreviousTime4 = CurrentTime;
     Serial.println(String(Clients.connected()));
     if (!Clients.connected()) {
-      if (Clients.connect("ArduinoClient")) {
+      if (Clients.connect("ArduinoMega1","ArduinoUser","ArduinoUser12345")) {
         Clients.publish("Module1CMAOut","hello");
         Clients.subscribe("Module1CMAIn");
       }
@@ -692,4 +701,3 @@ void loop() {
   wdt_reset();
 
 }
-
