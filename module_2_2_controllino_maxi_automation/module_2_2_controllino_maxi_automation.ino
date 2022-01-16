@@ -2,7 +2,7 @@
 //updated 25_10_2020
 //Dedicated to support shade and funs
 
-/* Notes: Module provides 3 main modules. Light, Shade and Fun modules. 
+/* Notes: Module provides 3 main modules. Light, Shade and Fan modules. 
  * All modules hear from upper level systems using MQTT protocol.
  * All statuses are sent to higher level system via MQTT protocol.
  * MQTT Publish topic Module2CMAOut, MQTT Subscribe topic Module2CMAIn.

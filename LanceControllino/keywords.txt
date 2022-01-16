@@ -1,0 +1,6 @@
+LanceControllino	KEYWORD1
+analogInputVerification KEYWORD2
+statusTimeVerification KEYWORD2
+processExternalRequest KEYWORD2
+addToBuffer KEYWORD2
+pullFromBuffer KEYWORD2
