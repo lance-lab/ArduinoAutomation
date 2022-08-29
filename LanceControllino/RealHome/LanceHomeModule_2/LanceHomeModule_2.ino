@@ -13,6 +13,8 @@
   #define MQTT_SOCKET_TIMEOUT 0.05
 #endif
 
+#define MQTT_EVENTS false
+
 // DEFINE MQTT BASIC ATTRIBUTES
 const char *MQTT_CLIENT_ID = "LanceControllino2";
 const char *MQTT_MAIN_TOPIC_SUBSCRIBE = "LanceControllino2/out";
@@ -123,7 +125,7 @@ int digitalOutputAssignment [DIGITAL_OUTPUT_ASSIGNMENT_RW][3] = {
   {DO07,LSHADEUP,    GROUP105},
   {DO08,LSHADEDOWN,  GROUP105}};
     
-LanceControllino LanceControllino(analogInputAssignment,digitalOutputAssignment,ANALOG_INPUT_ASSIGNMENT_RW,DIGITAL_OUTPUT_ASSIGNMENT_RW,true);
+LanceControllino LanceControllino(analogInputAssignment,digitalOutputAssignment,ANALOG_INPUT_ASSIGNMENT_RW,DIGITAL_OUTPUT_ASSIGNMENT_RW,MQTT_EVENTS);
 
 void setup()
 {
@@ -135,7 +137,7 @@ void setup()
   Ethernet.begin(Mac, Ip);
 
   //INITIATE CONNECTION TO MQTT SERVER IF NOT ESTABLISHED ALREADY. Clients.connected CAN BE "0" - NOT CONNECTED OR "1" - CONNECTED
-  if (!Clients.connected()) {
+  if (!Clients.connected() && MQTT_EVENTS == true) {
     if (Clients.connect(MQTT_CLIENT_ID, MQTT_USER_NAME, MQTT_PASSWORD)) {
         Clients.publish(MQTT_MAIN_TOPIC_PUBLISH_ADMIN,"HALLO:LanceControllino2:INIT");
         Clients.subscribe(MQTT_MAIN_TOPIC_SUBSCRIBE);
@@ -206,7 +208,9 @@ void loop()
   //PERFORM EVERY 200MS USING MAJOR TIMER, LIGHT STANDARD
   if ((CurrentTime - PreviousTime1) >= 200) {    
     PreviousTime1 = CurrentTime;
-      mqttPublishToTopicFromBuffer();
+      if(MQTT_EVENTS == true) {
+        mqttPublishToTopicFromBuffer();
+      }
       LanceControllino.statusTimeVerification();
   }
 
@@ -218,7 +222,7 @@ void loop()
  //CONNECTIVITY TO MQTT SERVER IS CHECKED AT CERTAIN TIMES. IT IS ATTEMPTED THE CONNECTION TO BE REESTABLISHED IF IT'S DOWN.
   if ((CurrentTime - PreviousTime4) >= 60000) { 
     PreviousTime4 = CurrentTime;
-    if (!Clients.connected()) {
+    if (!Clients.connected() && MQTT_EVENTS == true) {
       if (Clients.connect(MQTT_CLIENT_ID, MQTT_USER_NAME, MQTT_PASSWORD)) {
         Clients.publish(MQTT_MAIN_TOPIC_PUBLISH_ADMIN,"HALLO:LanceControllino2:INIT");
         Clients.subscribe(MQTT_MAIN_TOPIC_SUBSCRIBE);
@@ -228,7 +232,9 @@ void loop()
 
   if ((CurrentTime - PreviousTime5) >= 200) { 
     PreviousTime5 = CurrentTime;
-    Clients.loop();
+    if(MQTT_EVENTS == true) {
+      Clients.loop();
+    }
   } 
   
   //Watchdog
