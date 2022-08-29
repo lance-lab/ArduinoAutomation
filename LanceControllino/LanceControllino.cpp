@@ -1,7 +1,7 @@
 /*
   lancecontrollino.cpp - Library for enabling Controllino Maxi to smart home
   - Handle Lights, Fans and Shades
-  - Posting messages to buffer. Messages are ready to be pull and publish on MQTT.
+  - Posting messages to buffer. Messages are ready to be pull and publish on MQTT. Last update:
 */
 
 #include <Controllino.h>
