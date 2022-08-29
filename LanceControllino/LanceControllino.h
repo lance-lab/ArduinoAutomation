@@ -32,6 +32,8 @@
 #define DO05 7
 #define DO06 8
 #define DO07 9
+#define DO08 10
+#define DO09 11
 #define RO00 22
 #define RO01 23
 #define RO02 24

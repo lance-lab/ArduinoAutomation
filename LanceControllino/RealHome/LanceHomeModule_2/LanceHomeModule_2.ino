@@ -1,3 +1,5 @@
+
+
 //INCLUDE LIBRARIES
 #include <SPI.h>
 #include <avr/wdt.h>
@@ -59,7 +61,7 @@ Available Digital Ports:
 #define DIGPORTNONE -1
 */
 
-#define ANALOG_INPUT_ASSIGNMENT_RW 16
+#define ANALOG_INPUT_ASSIGNMENT_RW 18
 int analogInputAssignment [ANALOG_INPUT_ASSIGNMENT_RW][3] = {
   {AI00,BTN0,DO06},
   {AI00,BTN2,DO05},
@@ -76,7 +78,9 @@ int analogInputAssignment [ANALOG_INPUT_ASSIGNMENT_RW][3] = {
   {AI02,BTN2,RO02},  
   {AI02,BTN3,RO03},
   {AI06,BTN0,RO09},  
-  {AI06,BTN1,RO08}};
+  {AI06,BTN1,RO08},
+  {AI06,BTN2,DO07},
+  {AI06,BTN3,DO08}};
 
 /*
 DIGITAL OUTPUT ASSIGNMENT extends ANALOG INPUT ASSIGNMENT with digital 
@@ -99,7 +103,7 @@ Avalibale Groups:
 NOTE: Group must to be defined only for shade (SHADEUP/SHADEDOWN) related ports.
 */
 
-#define DIGITAL_OUTPUT_ASSIGNMENT_RW 15
+#define DIGITAL_OUTPUT_ASSIGNMENT_RW 17
 int digitalOutputAssignment [DIGITAL_OUTPUT_ASSIGNMENT_RW][3] = {
   {DO06,LLIGHT,      GROUPNONE},
   {DO05,LLIGHT,      GROUPNONE},
@@ -115,7 +119,9 @@ int digitalOutputAssignment [DIGITAL_OUTPUT_ASSIGNMENT_RW][3] = {
   {RO06,LSHADEUP,    GROUP104},
   {RO07,LSHADEDOWN,  GROUP104},
   {RO08,LFAN,        GROUPNONE},
-  {RO09,LFAN,        GROUPNONE}};
+  {RO09,LFAN,        GROUPNONE},
+  {DO07,LSHADEUP,    GROUP105},
+  {DO08,LSHADEDOWN,  GROUP105}};
     
 LanceControllino LanceControllino(analogInputAssignment,digitalOutputAssignment,ANALOG_INPUT_ASSIGNMENT_RW,DIGITAL_OUTPUT_ASSIGNMENT_RW,true);
 
