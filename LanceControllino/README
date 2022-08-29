@@ -1,8 +1,19 @@
-1. Install Arduino IDE
+1. Install Arduino IDE from https://www.arduino.cc/en/software
 2. In Arduino IDE add Controllino Board
   > Tools/Boards Manager
     > Add Controllino 3.1.0 board
 3. In Arduino IDE add libraries
   > Tools/ Manage Libraries 
     > Add RingBuf 2.0.0
-    > 
+    > Add SPI (should be automatically included)
+    > Add Ethernet (should be automatically included)
+    > Add PubSubClient 2.8.0
+ 4. In Arduino IDE add custom library
+    > Scatch/ Include Library / Add ZIP Library
+      > Pull LanceControllino from GIT and pack it to ZIP file
+      > Add Library
+ 5. Open INO files in Arduino IDE and update controllino boxes.
+ 
+ LanceHomeModule 1
+ LanceHomeModule 2
+ 
