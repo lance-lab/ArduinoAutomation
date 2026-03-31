@@ -15,25 +15,27 @@
 
 #include <EEPROM.h>
 
-// ===== EEPROM LAYOUT =====
-#define EEPROM_MQTT_USER_ADDR      0   // MQTT username (32 bytes max)
-#define EEPROM_MQTT_PASS_ADDR      32  // MQTT password (64 bytes max)
-#define EEPROM_MQTT_SERVER_ADDR    96  // MQTT server IP string (16 bytes max)
-#define EEPROM_MQTT_CLIENT_ID_ADDR 112 // MQTT client ID (16 bytes max)
-#define EEPROM_MAC_ADDR            128 // MAC address (6 bytes)
-#define EEPROM_LOCAL_IP_ADDR       134 // Local IP address (4 bytes)
-#define EEPROM_GATEWAY_IP_ADDR     138 // Gateway IP address (4 bytes)
-#define EEPROM_SUBNET_MASK_ADDR    142 // Subnet mask (4 bytes)
-#define EEPROM_MQTT_PORT_ADDR      146 // MQTT port (2 bytes)
-#define EEPROM_INIT_FLAG_ADDR      148 // Initialization flag (magic byte 0xAB)
-#define EEPROM_CHECKSUM_ADDR       149 // CRC16 checksum (optional, 2 bytes)
-
 // ===== SIZE LIMITS =====
 #define CRED_USERNAME_MAX         32   // Max username length
 #define CRED_PASSWORD_MAX         64   // Max password length
 #define CRED_SERVER_MAX           16   // Max server IP string (e.g., "10.10.10.20\0")
-#define CRED_CLIENT_ID_MAX        16   // Max client ID length
+#define CRED_CLIENT_ID_MAX        20   // Max client ID length
 #define EEPROM_INIT_MAGIC         0xAB // Magic byte indicating valid data
+#define EEPROM_LAYOUT_VERSION     2
+
+// ===== EEPROM LAYOUT =====
+#define EEPROM_MQTT_USER_ADDR      0
+#define EEPROM_MQTT_PASS_ADDR      (EEPROM_MQTT_USER_ADDR + CRED_USERNAME_MAX)
+#define EEPROM_MQTT_SERVER_ADDR    (EEPROM_MQTT_PASS_ADDR + CRED_PASSWORD_MAX)
+#define EEPROM_MQTT_CLIENT_ID_ADDR (EEPROM_MQTT_SERVER_ADDR + CRED_SERVER_MAX)
+#define EEPROM_MAC_ADDR            (EEPROM_MQTT_CLIENT_ID_ADDR + CRED_CLIENT_ID_MAX)
+#define EEPROM_LOCAL_IP_ADDR       (EEPROM_MAC_ADDR + 6)
+#define EEPROM_GATEWAY_IP_ADDR     (EEPROM_LOCAL_IP_ADDR + 4)
+#define EEPROM_SUBNET_MASK_ADDR    (EEPROM_GATEWAY_IP_ADDR + 4)
+#define EEPROM_MQTT_PORT_ADDR      (EEPROM_SUBNET_MASK_ADDR + 4)
+#define EEPROM_INIT_FLAG_ADDR      (EEPROM_MQTT_PORT_ADDR + 2)
+#define EEPROM_CHECKSUM_ADDR       (EEPROM_INIT_FLAG_ADDR + 1)
+#define EEPROM_LAYOUT_VERSION_ADDR (EEPROM_CHECKSUM_ADDR + 2)
 
 // ===== CREDENTIAL STRUCTURE =====
 struct Credentials {
@@ -62,6 +64,12 @@ class CredentialManager {
       if (EEPROM.read(EEPROM_INIT_FLAG_ADDR) != EEPROM_INIT_MAGIC) {
         Serial.println("ERROR: Credentials not initialized in EEPROM!");
         Serial.println("SOLUTION: Upload SetCredentials.ino to program EEPROM first");
+        return false;
+      }
+
+      if (EEPROM.read(EEPROM_LAYOUT_VERSION_ADDR) != EEPROM_LAYOUT_VERSION) {
+        Serial.println("ERROR: EEPROM credential layout is outdated");
+        Serial.println("SOLUTION: Upload SetCredentials.ino again to rewrite credentials");
         return false;
       }
       
@@ -145,6 +153,7 @@ class CredentialManager {
       
       // Write initialization flag to mark EEPROM as valid
       EEPROM.write(EEPROM_INIT_FLAG_ADDR, EEPROM_INIT_MAGIC);
+      EEPROM.write(EEPROM_LAYOUT_VERSION_ADDR, EEPROM_LAYOUT_VERSION);
       
       Serial.println("✓ Credentials programmed to EEPROM successfully!");
       Serial.println("  You can now upload your main sketch");
@@ -157,7 +166,7 @@ class CredentialManager {
       Use this to clear credentials (for security or reset purposes).
     */
     static void eraseCredentials() {
-      for (int i = 0; i < 150; i++) {
+      for (int i = 0; i <= EEPROM_LAYOUT_VERSION_ADDR; i++) {
         EEPROM.write(i, 0xFF);  // 0xFF is the EEPROM empty value
       }
       Serial.println("Credentials erased from EEPROM");
@@ -167,13 +176,14 @@ class CredentialManager {
       Get EEPROM usage statistics (for debugging)
     */
     static void printStats() {
-      int used = 150; // EEPROM address used up to init flag
+      int used = EEPROM_LAYOUT_VERSION_ADDR + 1;
       int available = 4096 - used;
       
       Serial.println("=== EEPROM Statistics ===");
       Serial.println("Used: " + String(used) + " bytes");
       Serial.println("Available: " + String(available) + " bytes");
       Serial.println("Init Flag: " + String(EEPROM.read(EEPROM_INIT_FLAG_ADDR) == EEPROM_INIT_MAGIC ? "VALID" : "INVALID"));
+      Serial.println("Layout Version: " + String(EEPROM.read(EEPROM_LAYOUT_VERSION_ADDR)));
     }
     
   private:

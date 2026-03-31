@@ -42,30 +42,101 @@ const __FlashStringHelper *linkStatusToText(EthernetLinkStatus status)
       return F("Unknown");
   }
 }
+
+const char *outputTypeToEntityComponent(int type)
+{
+  switch (type) {
+    case LLIGHT:
+      return "light";
+    case LFAN:
+      return "fan";
+    case LSHADEUP:
+      return "cover";
+    default:
+      return "unknown";
+  }
 }
 
-LanceControllino::LanceControllino(int analogAssignment[][3], int digitalAssignment[][3], int analogAssignmentSize, int digitalAssignmentSize) 
+const char *coverStateToPayload(int state)
+{
+  switch (state) {
+    case COVER_STATE_OPENING:
+      return "OPENING";
+    case COVER_STATE_CLOSING:
+      return "CLOSING";
+    default:
+      return "STOPPED";
+  }
+}
+}
+
+LanceControllino::LanceControllino(int analogAssignment[][3], DigitalOutputConfig digitalAssignment[], int analogAssignmentSize, int digitalAssignmentSize) 
 {
   _initialized = initialization(analogAssignment, digitalAssignment, analogAssignmentSize, digitalAssignmentSize);
   _portActivated = portActivation();
   _eventActivated = false;
 }  
 
-LanceControllino::LanceControllino(int analogAssignment[][3], int digitalAssignment[][3], int analogAssignmentSize, int digitalAssignmentSize, bool events) 
+LanceControllino::LanceControllino(int analogAssignment[][3], DigitalOutputConfig digitalAssignment[], int analogAssignmentSize, int digitalAssignmentSize, bool events) 
 {
   _initialized = initialization(analogAssignment, digitalAssignment, analogAssignmentSize, digitalAssignmentSize);
   _portActivated = portActivation();
   _eventActivated = events;
 }  
 
-bool LanceControllino::parseMQTTMessage(const String &message, String &type, String &port, String &status)
+bool LanceControllino::parseMQTTMessage(const String &message, String &type, String &zone, int &index, String &status)
+{
+  int typePos = message.indexOf("TYPE=");
+  int zonePos = message.indexOf("ZONE=");
+  int indexPos = message.indexOf("INDEX=");
+  int statusPos = message.indexOf("STATUS=");
+
+  if (typePos == -1 || zonePos == -1 || indexPos == -1 || statusPos == -1) {
+    Serial.println("ERROR: Missing required MQTT fields");
+    return false;
+  }
+
+  int typeEnd = message.indexOf(":", typePos);
+  int zoneEnd = message.indexOf(":", zonePos);
+  int indexEnd = message.indexOf(":", indexPos);
+  int statusEnd = message.indexOf(":", statusPos);
+
+  if (typeEnd == -1) typeEnd = message.length();
+  if (zoneEnd == -1) zoneEnd = message.length();
+  if (indexEnd == -1) indexEnd = message.length();
+  if (statusEnd == -1) statusEnd = message.length();
+
+  type = message.substring(typePos + 5, typeEnd);
+  zone = message.substring(zonePos + 5, zoneEnd);
+  String indexText = message.substring(indexPos + 6, indexEnd);
+  status = message.substring(statusPos + 7, statusEnd);
+
+  if (status != "ON" && status != "OFF") {
+    Serial.println("ERROR: Invalid STATUS value: " + status);
+    return false;
+  }
+
+  if (zone.length() == 0) {
+    Serial.println("ERROR: Invalid ZONE value");
+    return false;
+  }
+
+  index = indexText.toInt();
+  if (index <= 0) {
+    Serial.println("ERROR: Invalid INDEX value: " + indexText);
+    return false;
+  }
+
+  return true;
+}
+
+bool LanceControllino::parseLegacyMQTTMessage(const String &message, String &type, int &port, String &status)
 {
   int typePos = message.indexOf("TYPE=");
   int portPos = message.indexOf("PORT=");
   int statusPos = message.indexOf("STATUS=");
 
   if (typePos == -1 || portPos == -1 || statusPos == -1) {
-    Serial.println("ERROR: Missing required MQTT fields");
     return false;
   }
 
@@ -78,7 +149,7 @@ bool LanceControllino::parseMQTTMessage(const String &message, String &type, Str
   if (statusEnd == -1) statusEnd = message.length();
 
   type = message.substring(typePos + 5, typeEnd);
-  port = message.substring(portPos + 5, portEnd);
+  String portText = message.substring(portPos + 5, portEnd);
   status = message.substring(statusPos + 7, statusEnd);
 
   if (status != "ON" && status != "OFF") {
@@ -86,9 +157,9 @@ bool LanceControllino::parseMQTTMessage(const String &message, String &type, Str
     return false;
   }
 
-  int portInt = port.toInt();
-  if (portInt <= 0 && port != "0") {
-    Serial.println("ERROR: Invalid PORT value: " + port);
+  port = portText.toInt();
+  if (port <= 0 && portText != "0") {
+    Serial.println("ERROR: Invalid PORT value: " + portText);
     return false;
   }
 
@@ -167,12 +238,16 @@ void LanceControllinoRuntime::configureMqttTopics(const char *topicBaseName)
     _mqttMainTopicPublishNormal[0] = '\0';
     _mqttMainTopicPublishAdmin[0] = '\0';
     _mqttMainTopicSubscribe[0] = '\0';
+    _mqttAvailabilityTopic[0] = '\0';
+    _mqttCommandSubscribeTopic[0] = '\0';
     return;
   }
 
-  snprintf(_mqttMainTopicPublishNormal, sizeof(_mqttMainTopicPublishNormal), "%s/in/normal", baseName);
-  snprintf(_mqttMainTopicPublishAdmin, sizeof(_mqttMainTopicPublishAdmin), "%s/in/admin", baseName);
-  snprintf(_mqttMainTopicSubscribe, sizeof(_mqttMainTopicSubscribe), "%s/out", baseName);
+  _mqttMainTopicPublishNormal[0] = '\0';
+  _mqttMainTopicPublishAdmin[0] = '\0';
+  _mqttMainTopicSubscribe[0] = '\0';
+  snprintf(_mqttAvailabilityTopic, sizeof(_mqttAvailabilityTopic), "controllino/%s/status", baseName);
+  snprintf(_mqttCommandSubscribeTopic, sizeof(_mqttCommandSubscribeTopic), "controllino/%s/+/+/set", baseName);
 }
 
 IPAddress LanceControllinoRuntime::parseIPAddress(const char *ipStr)
@@ -211,7 +286,9 @@ void LanceControllinoRuntime::setup()
 
   printStartupBanner();
 
-  //Ethernet.init(10);
+  if (ETHERNET_CHIP_SELECT_PIN >= 0) {
+    Ethernet.init(ETHERNET_CHIP_SELECT_PIN);
+  }
   Ethernet.begin(_mac, _localIp, _gatewayIp, _gatewayIp, _subnetMask);
   Serial.println("Ethernet initialized");
   Serial.print("Hardware status: ");
@@ -228,8 +305,13 @@ void LanceControllinoRuntime::setup()
   Serial.print(_mqttServerIp);
   Serial.print(":");
   Serial.println(_mqttPort);
+  Serial.print("MQTT availability topic: ");
+  Serial.println(_mqttAvailabilityTopic);
+  Serial.print("MQTT command wildcard: ");
+  Serial.println(_mqttCommandSubscribeTopic);
 
   _mqttClient.setClient(_ethClient);
+  _mqttClient.setBufferSize(_maxMQTTPacketSize);
   _mqttClient.setServer(_mqttServerIp, _mqttPort);
   _mqttClient.setCallback(LanceControllinoRuntime::mqttCallbackRouter);
 
@@ -242,30 +324,24 @@ void LanceControllinoRuntime::setup()
 
 void LanceControllinoRuntime::handleMQTTCallback(char* topic, byte* payload, unsigned int length)
 {
-  (void)topic;
-
   if (length == 0 || length > _maxMQTTMessageLength) {
     return;
   }
 
-  String message;
-  String type;
-  String port;
-  String status;
+  char payloadText[_maxMQTTMessageLength + 1];
+  memcpy(payloadText, payload, length);
+  payloadText[length] = '\0';
 
-  for (unsigned int i = 0; i < length; i++) {
-    message += (char)payload[i];
+  Serial.print("MQTT RX topic: ");
+  Serial.println(topic);
+  Serial.print("MQTT RX payload: ");
+  Serial.println(payloadText);
+
+  if (handleHomeAssistantCommandTopic(topic, payloadText)) {
+    return;
   }
-
-  if (LanceControllino::parseMQTTMessage(message, type, port, status)) {
-    int statusInt = (status == "ON") ? ON : OFF;
-    int portInt = port.toInt();
-
-    Serial.println("type=" + type + " port=" + port + " status=" + status);
-    _controller.processExternalRequest(portInt, statusInt);
-  } else {
-    Serial.println("MQTT parse error: " + message);
-  }
+  Serial.print("Ignoring unknown MQTT topic: ");
+  Serial.println(topic);
 }
 
 void LanceControllinoRuntime::mqttCallbackRouter(char* topic, byte* payload, unsigned int length)
@@ -277,8 +353,17 @@ void LanceControllinoRuntime::mqttCallbackRouter(char* topic, byte* payload, uns
 
 void LanceControllinoRuntime::publishFromBuffer()
 {
+  if (!_mqttClient.connected()) {
+    return;
+  }
+
   if (_controller.pullFromBuffer()) {
-    _mqttClient.publish(_mqttMainTopicPublishNormal, _controller.bufferPull._topicMessage);
+    String bufferedMessage = String(_controller.bufferPull._topicMessage);
+
+    if (!publishHomeAssistantStateFromMessage(bufferedMessage)) {
+      Serial.println("ERROR: MQTT publish failed, re-queueing event");
+      _controller.addToBuffer(_controller.bufferPull._topic, bufferedMessage);
+    }
   }
 }
 
@@ -289,10 +374,14 @@ void LanceControllinoRuntime::connectMQTTIfNeeded()
   }
 
   Serial.println("Attempting MQTT connection...");
-  if (_mqttClient.connect(_clientId, _mqttUserName, _mqttPassword)) {
+  if (_mqttClient.connect(_clientId, _mqttUserName, _mqttPassword, _mqttAvailabilityTopic, 0, true, "offline")) {
     Serial.println("MQTT connected");
-    _mqttClient.publish(_mqttMainTopicPublishAdmin, ("HALLO:" + String(_clientId) + ":INIT").c_str());
-    _mqttClient.subscribe(_mqttMainTopicSubscribe);
+    publishRetained(_mqttAvailabilityTopic, "online");
+    if (_mqttClient.subscribe(_mqttCommandSubscribeTopic)) {
+      Serial.println("Subscribed to: " + String(_mqttCommandSubscribeTopic));
+    } else {
+      Serial.println("ERROR: MQTT subscribe failed: " + String(_mqttCommandSubscribeTopic));
+    }
   } else {
     Serial.println("Failed to connect to MQTT broker");
     Serial.print("MQTT state: ");
@@ -355,7 +444,7 @@ void LanceControllinoRuntime::loop()
   wdt_reset();
 }
 
-bool LanceControllino::initialization(int analogAssignment[][3], int digitalAssignment[][3], int analogAssignmentSize, int digitalAssignmentSize) 
+bool LanceControllino::initialization(int analogAssignment[][3], DigitalOutputConfig digitalAssignment[], int analogAssignmentSize, int digitalAssignmentSize) 
 {
   /*
   Map input arrays to global arrays
@@ -374,7 +463,7 @@ bool LanceControllino::initialization(int analogAssignment[][3], int digitalAssi
     }
 
     for (int j=0; j<digitalAssignmentSize;j++) {
-      if (digitalAssignment[j][0] == analogAssignment[i][2]) {
+      if (digitalAssignment[j].port == analogAssignment[i][2]) {
         indexDigitalAssignment = j;
         break;
       }
@@ -396,14 +485,37 @@ bool LanceControllino::initialization(int analogAssignment[][3], int digitalAssi
 
     if (indexDigitalAssignment != -1 && indexAnalogInputAssignment != -1 && indexDigitalOutputAssignment != -1 && indexAnalogInputs != -1) {
       _analogInputAssignment[indexAnalogInputAssignment][2] = analogAssignment[i][2];
-      _digitalOutputAssignment[indexDigitalOutputAssignment][1] = digitalAssignment[indexDigitalAssignment][1];
-      _digitalOutputAssignment[indexDigitalOutputAssignment][2] = digitalAssignment[indexDigitalAssignment][2];
+      _digitalOutputAssignment[indexDigitalOutputAssignment][1] = digitalAssignment[indexDigitalAssignment].type;
+      _digitalOutputAssignment[indexDigitalOutputAssignment][2] = digitalAssignment[indexDigitalAssignment].group;
+      _digitalOutputZones[indexDigitalOutputAssignment] = digitalAssignment[indexDigitalAssignment].zone;
+      _digitalOutputZoneIndexes[indexDigitalOutputAssignment] = digitalAssignment[indexDigitalAssignment].index;
       _analogInputs[1][indexAnalogInputs] = ENABLED;
     }
     else {
       return false;
     }
   }
+
+  for (int i = 0; i < digitalAssignmentSize; i++) {
+    int indexDigitalOutputAssignment = -1;
+
+    for (int j = 0; j < _DIGITAL_OUTPUT_ASSIGNMENT_SIZE; j++) {
+      if (_digitalOutputAssignment[j][0] == digitalAssignment[i].port) {
+        indexDigitalOutputAssignment = j;
+        break;
+      }
+    }
+
+    if (indexDigitalOutputAssignment == -1) {
+      return false;
+    }
+
+    _digitalOutputAssignment[indexDigitalOutputAssignment][1] = digitalAssignment[i].type;
+    _digitalOutputAssignment[indexDigitalOutputAssignment][2] = digitalAssignment[i].group;
+    _digitalOutputZones[indexDigitalOutputAssignment] = digitalAssignment[i].zone;
+    _digitalOutputZoneIndexes[indexDigitalOutputAssignment] = digitalAssignment[i].index;
+  }
+
   return true;
 }
 
@@ -447,6 +559,76 @@ bool LanceControllino::pullFromBuffer()
     return false;
   }
   return false;
+}
+
+int LanceControllino::getOutputCount() const
+{
+  return _DIGITAL_OUTPUT_ASSIGNMENT_SIZE;
+}
+
+bool LanceControllino::isOutputConfigured(int outputIndex) const
+{
+  return outputIndex >= 0 &&
+         outputIndex < _DIGITAL_OUTPUT_ASSIGNMENT_SIZE &&
+         _digitalOutputAssignment[outputIndex][1] != TYPENONE;
+}
+
+int LanceControllino::getOutputPort(int outputIndex) const
+{
+  return _digitalOutputAssignment[outputIndex][0];
+}
+
+int LanceControllino::getOutputType(int outputIndex) const
+{
+  return _digitalOutputAssignment[outputIndex][1];
+}
+
+int LanceControllino::getOutputGroup(int outputIndex) const
+{
+  return _digitalOutputAssignment[outputIndex][2];
+}
+
+int LanceControllino::getOutputStatus(int outputIndex) const
+{
+  return _digitalOutputAssignment[outputIndex][3];
+}
+
+const char *LanceControllino::getOutputZone(int outputIndex) const
+{
+  return _digitalOutputZones[outputIndex];
+}
+
+int LanceControllino::getOutputZoneIndex(int outputIndex) const
+{
+  return _digitalOutputZoneIndexes[outputIndex];
+}
+
+int LanceControllino::getCoverState(const String &zone, int index) const
+{
+  bool shadeUpOn = false;
+  bool shadeDownOn = false;
+
+  for (int i = 0; i < _DIGITAL_OUTPUT_ASSIGNMENT_SIZE; i++) {
+    if (String(_digitalOutputZones[i]) != zone || _digitalOutputZoneIndexes[i] != index) {
+      continue;
+    }
+
+    if (_digitalOutputAssignment[i][1] == LSHADEUP && _digitalOutputAssignment[i][3] == ON) {
+      shadeUpOn = true;
+    } else if (_digitalOutputAssignment[i][1] == LSHADEDOWN && _digitalOutputAssignment[i][3] == ON) {
+      shadeDownOn = true;
+    }
+  }
+
+  if (shadeUpOn) {
+    return COVER_STATE_OPENING;
+  }
+
+  if (shadeDownOn) {
+    return COVER_STATE_CLOSING;
+  }
+
+  return COVER_STATE_STOPPED;
 }
 
 void LanceControllino::getBufferStats(unsigned int &dropped, unsigned int &total)
@@ -539,20 +721,20 @@ bool LanceControllino::lightOperation(int port, int status)
     if (pinStatus == ON) {
       if (status == ON) {
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = ON;
-        message = "TYPE=LIGHT:PORT=" + String(port) + ":STATUS=ON";
+        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "LIGHT", ON);
         addToBuffer(1, message);
       }
       else {
         digitalWrite(port, LOW);
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = OFF;
-        message = "TYPE=LIGHT:PORT=" + String(port) + ":STATUS=OFF";
+        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "LIGHT", OFF);
         addToBuffer(1, message);
       }
     }
     else if (pinStatus == OFF) {
       if (status == OFF) {
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = OFF;
-        message = "TYPE=LIGHT:PORT=" + String(port) + ":STATUS=OFF";
+        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "LIGHT", OFF);
         addToBuffer(1, message);
         Serial.println("no_action");
       }
@@ -560,7 +742,7 @@ bool LanceControllino::lightOperation(int port, int status)
         //digitalWrite(port, HIGH);
         digitalWrite(port, HIGH);
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = ON;
-        message = "TYPE=LIGHT:PORT=" + String(port) + ":STATUS=ON";
+        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "LIGHT", ON);
         addToBuffer(1, message);
       }
     } else {
@@ -604,8 +786,8 @@ bool LanceControllino::shadeOperation(int port, int status) {
       _digitalOutputAssignment[shadeDownPortIndex][3] = OFF;
       _digitalOutputAssignmentClock[shadeUpPortIndex] = OFF;
       _digitalOutputAssignmentClock[shadeDownPortIndex] = OFF;
-      messageUp = "TYPE=SHADEUP:PORT=" + String(_digitalOutputAssignment[shadeUpPortIndex][0]) + ":STATUS=OFF";
-      messageDown = "TYPE=SHADEDOWN:PORT=" + String(_digitalOutputAssignment[shadeDownPortIndex][0]) + ":STATUS=OFF";
+      messageUp = buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", OFF);
+      messageDown = buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", OFF);
       addToBuffer(1, messageUp);
       addToBuffer(1, messageDown);
     }
@@ -618,8 +800,8 @@ bool LanceControllino::shadeOperation(int port, int status) {
       _digitalOutputAssignment[shadeDownPortIndex][3] = OFF;
       _digitalOutputAssignmentClock[shadeUpPortIndex] = OFF;
       _digitalOutputAssignmentClock[shadeDownPortIndex] = OFF;
-      messageUp = "TYPE=SHADEUP:PORT=" + String(_digitalOutputAssignment[shadeUpPortIndex][0]) + ":STATUS=OFF";
-      messageDown = "TYPE=SHADEDOWN:PORT=" + String(_digitalOutputAssignment[shadeDownPortIndex][0]) + ":STATUS=OFF";
+      messageUp = buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", OFF);
+      messageDown = buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", OFF);
       addToBuffer(1, messageUp);
       addToBuffer(1, messageDown);    
     }
@@ -633,8 +815,8 @@ bool LanceControllino::shadeOperation(int port, int status) {
       _digitalOutputAssignment[shadeDownPortIndex][3] = OFF;
       _digitalOutputAssignmentClock[shadeUpPortIndex] = millis();
       _digitalOutputAssignmentClock[shadeDownPortIndex] = OFF;
-      messageUp = "TYPE=SHADEUP:PORT=" + String(_digitalOutputAssignment[shadeUpPortIndex][0]) + ":STATUS=ON";
-      messageDown = "TYPE=SHADEDOWN:PORT=" + String(_digitalOutputAssignment[shadeDownPortIndex][0]) + ":STATUS=OFF";
+      messageUp = buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", ON);
+      messageDown = buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", OFF);
       addToBuffer(1, messageUp);
       addToBuffer(1, messageDown);
     }
@@ -647,8 +829,8 @@ bool LanceControllino::shadeOperation(int port, int status) {
       _digitalOutputAssignment[shadeUpPortIndex][3] = OFF;
       _digitalOutputAssignmentClock[shadeDownPortIndex] = millis();
       _digitalOutputAssignmentClock[shadeUpPortIndex] = OFF;
-      messageUp = "TYPE=SHADEUP:PORT=" + String(_digitalOutputAssignment[shadeUpPortIndex][0]) + ":STATUS=OFF";
-      messageDown = "TYPE=SHADEDOWN:PORT=" + String(_digitalOutputAssignment[shadeDownPortIndex][0]) + ":STATUS=ON";
+      messageUp = buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", OFF);
+      messageDown = buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", ON);
       addToBuffer(1, messageUp);
       addToBuffer(1, messageDown);
     }
@@ -681,14 +863,14 @@ bool LanceControllino::fanOperation(int port, int status)
       if (status == ON) {
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = ON;
         _digitalOutputAssignmentClock[digitalOutputAssignmentIndex] = millis();
-        message = "TYPE=FAN:PORT=" + String(port) + ":STATUS=ON";
+        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "FAN", ON);
         addToBuffer(1, message);
       }
       else {
         digitalWrite(port, LOW);
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = OFF;
         _digitalOutputAssignmentClock[digitalOutputAssignmentIndex] = OFF;
-        message = "TYPE=FAN:PORT=" + String(port) + ":STATUS=OFF";
+        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "FAN", OFF);
         addToBuffer(1, message);
       }
     }
@@ -696,14 +878,14 @@ bool LanceControllino::fanOperation(int port, int status)
       if (status == OFF) {
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = OFF;
         _digitalOutputAssignmentClock[digitalOutputAssignmentIndex] = OFF;
-        message = "TYPE=FAN:PORT=" + String(port) + ":STATUS=OFF";
+        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "FAN", OFF);
         addToBuffer(1, message);
       }
       else {
         digitalWrite(port, HIGH);
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = ON;
         _digitalOutputAssignmentClock[digitalOutputAssignmentIndex] = millis();
-        message = "TYPE=FAN:PORT=" + String(port) + ":STATUS=ON";
+        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "FAN", ON);
         addToBuffer(1, message);
       }
     } else {
@@ -721,28 +903,90 @@ void LanceControllino::statusTimeVerification() {
   for(int i=0; i<_DIGITAL_OUTPUT_ASSIGNMENT_SIZE; i++) {
     if (_digitalOutputAssignment[i][1] == LSHADEUP || _digitalOutputAssignment[i][1] == LSHADEDOWN) {
       // Safe timeout check that works correctly with millis() overflow
-      if ((unsigned long)(millis() - _digitalOutputAssignmentClock[i]) >= RUN_SHADE_COUNT) {
+      if (_digitalOutputAssignment[i][3] == ON &&
+          (unsigned long)(millis() - _digitalOutputAssignmentClock[i]) >= RUN_SHADE_COUNT) {
         digitalWrite(_digitalOutputAssignment[i][0], LOW);
         _digitalOutputAssignment[i][3] = OFF;
         _digitalOutputAssignmentClock[i] = OFF;
+        addToBuffer(1, buildMqttStatusMessage(i, _digitalOutputAssignment[i][1] == LSHADEUP ? "SHADEUP" : "SHADEDOWN", OFF));
       }
     }
     else if (_digitalOutputAssignment[i][1] == LFAN) {
       // Safe timeout check that works correctly with millis() overflow
-      if ((unsigned long)(millis() - _digitalOutputAssignmentClock[i]) >= RUN_FUN_COUNT) {
+      if (_digitalOutputAssignment[i][3] == ON &&
+          (unsigned long)(millis() - _digitalOutputAssignmentClock[i]) >= RUN_FUN_COUNT) {
         digitalWrite(_digitalOutputAssignment[i][0], LOW);
         _digitalOutputAssignment[i][3] = OFF;
         _digitalOutputAssignmentClock[i] = OFF;
+        addToBuffer(1, buildMqttStatusMessage(i, "FAN", OFF));
       }
     }
   }
+}
+
+String LanceControllino::buildMqttStatusMessage(int outputIndex, const char *typeName, int status)
+{
+  String message = "TYPE=";
+  message += typeName;
+  message += ":ZONE=";
+  message += _digitalOutputZones[outputIndex];
+  message += ":INDEX=";
+  message += String(_digitalOutputZoneIndexes[outputIndex]);
+  message += ":STATUS=";
+  message += (status == ON) ? "ON" : "OFF";
+  return message;
+}
+
+int LanceControllino::findOutputIndexByIdentity(const String &type, const String &zone, int index)
+{
+  for (int i = 0; i < _DIGITAL_OUTPUT_ASSIGNMENT_SIZE; i++) {
+    if (String(_digitalOutputZones[i]) != zone || _digitalOutputZoneIndexes[i] != index) {
+      continue;
+    }
+
+    switch (_digitalOutputAssignment[i][1]) {
+      case LLIGHT:
+        if (type == "LIGHT") return i;
+        break;
+      case LFAN:
+        if (type == "FAN") return i;
+        break;
+      case LSHADEUP:
+        if (type == "SHADEUP") return i;
+        break;
+      case LSHADEDOWN:
+        if (type == "SHADEDOWN") return i;
+        break;
+    }
+  }
+
+  return -1;
+}
+
+bool LanceControllino::processExternalRequest(const String &type, const String &zone, int index, int status) {
+
+  int digitalOutputAssignmentIndex = findOutputIndexByIdentity(type, zone, index);
+
+  // Return false if port not found
+  if (digitalOutputAssignmentIndex == -1) {
+    return false;
+  }
+
+  int port = _digitalOutputAssignment[digitalOutputAssignmentIndex][0];
+
+  switch (_digitalOutputAssignment[digitalOutputAssignmentIndex][1]) {
+    case LLIGHT: {lightOperation(port, status); break;}
+    case LSHADEUP: {shadeOperation(port, status); break;}
+    case LSHADEDOWN: {shadeOperation(port, status); break;}
+    case LFAN: {fanOperation(port, status); break;}
+  }
+  return true;
 }
 
 bool LanceControllino::processExternalRequest(int port, int status) {
 
   int digitalOutputAssignmentIndex = findElementColumn(_digitalOutputAssignment, _DIGITAL_OUTPUT_ASSIGNMENT_SIZE, port);
 
-  // Return false if port not found
   if (digitalOutputAssignmentIndex == -1) {
     return false;
   }
@@ -754,6 +998,236 @@ bool LanceControllino::processExternalRequest(int port, int status) {
     case LFAN: {fanOperation(port, status); break;}
   }
   return true;
+}
+
+bool LanceControllino::processCoverCommand(const String &zone, int index, const String &command)
+{
+  int shadeUpPortIndex = -1;
+  int shadeDownPortIndex = -1;
+
+  for (int i = 0; i < _DIGITAL_OUTPUT_ASSIGNMENT_SIZE; i++) {
+    if (String(_digitalOutputZones[i]) != zone || _digitalOutputZoneIndexes[i] != index) {
+      continue;
+    }
+
+    if (_digitalOutputAssignment[i][1] == LSHADEUP) {
+      shadeUpPortIndex = i;
+    } else if (_digitalOutputAssignment[i][1] == LSHADEDOWN) {
+      shadeDownPortIndex = i;
+    }
+  }
+
+  if (shadeUpPortIndex == -1 || shadeDownPortIndex == -1) {
+    return false;
+  }
+
+  if (command == "OPEN") {
+    digitalWrite(_digitalOutputAssignment[shadeDownPortIndex][0], LOW);
+    digitalWrite(_digitalOutputAssignment[shadeUpPortIndex][0], HIGH);
+    _digitalOutputAssignment[shadeUpPortIndex][3] = ON;
+    _digitalOutputAssignment[shadeDownPortIndex][3] = OFF;
+    _digitalOutputAssignmentClock[shadeUpPortIndex] = millis();
+    _digitalOutputAssignmentClock[shadeDownPortIndex] = OFF;
+  } else if (command == "CLOSE") {
+    digitalWrite(_digitalOutputAssignment[shadeUpPortIndex][0], LOW);
+    digitalWrite(_digitalOutputAssignment[shadeDownPortIndex][0], HIGH);
+    _digitalOutputAssignment[shadeUpPortIndex][3] = OFF;
+    _digitalOutputAssignment[shadeDownPortIndex][3] = ON;
+    _digitalOutputAssignmentClock[shadeUpPortIndex] = OFF;
+    _digitalOutputAssignmentClock[shadeDownPortIndex] = millis();
+  } else if (command == "STOP") {
+    digitalWrite(_digitalOutputAssignment[shadeUpPortIndex][0], LOW);
+    digitalWrite(_digitalOutputAssignment[shadeDownPortIndex][0], LOW);
+    _digitalOutputAssignment[shadeUpPortIndex][3] = OFF;
+    _digitalOutputAssignment[shadeDownPortIndex][3] = OFF;
+    _digitalOutputAssignmentClock[shadeUpPortIndex] = OFF;
+    _digitalOutputAssignmentClock[shadeDownPortIndex] = OFF;
+  } else {
+    return false;
+  }
+
+  addToBuffer(1, buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", _digitalOutputAssignment[shadeUpPortIndex][3]));
+  addToBuffer(1, buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", _digitalOutputAssignment[shadeDownPortIndex][3]));
+  return true;
+}
+
+bool LanceControllino::processCoverCommand(const char *zone, int index, const char *command)
+{
+  int shadeUpPortIndex = -1;
+  int shadeDownPortIndex = -1;
+
+  for (int i = 0; i < _DIGITAL_OUTPUT_ASSIGNMENT_SIZE; i++) {
+    if (strcmp(_digitalOutputZones[i], zone) != 0 || _digitalOutputZoneIndexes[i] != index) {
+      continue;
+    }
+
+    if (_digitalOutputAssignment[i][1] == LSHADEUP) {
+      shadeUpPortIndex = i;
+    } else if (_digitalOutputAssignment[i][1] == LSHADEDOWN) {
+      shadeDownPortIndex = i;
+    }
+  }
+
+  if (shadeUpPortIndex == -1 || shadeDownPortIndex == -1) {
+    return false;
+  }
+
+  if (strcmp(command, "OPEN") == 0) {
+    digitalWrite(_digitalOutputAssignment[shadeDownPortIndex][0], LOW);
+    digitalWrite(_digitalOutputAssignment[shadeUpPortIndex][0], HIGH);
+    _digitalOutputAssignment[shadeUpPortIndex][3] = ON;
+    _digitalOutputAssignment[shadeDownPortIndex][3] = OFF;
+    _digitalOutputAssignmentClock[shadeUpPortIndex] = millis();
+    _digitalOutputAssignmentClock[shadeDownPortIndex] = OFF;
+  } else if (strcmp(command, "CLOSE") == 0) {
+    digitalWrite(_digitalOutputAssignment[shadeUpPortIndex][0], LOW);
+    digitalWrite(_digitalOutputAssignment[shadeDownPortIndex][0], HIGH);
+    _digitalOutputAssignment[shadeUpPortIndex][3] = OFF;
+    _digitalOutputAssignment[shadeDownPortIndex][3] = ON;
+    _digitalOutputAssignmentClock[shadeUpPortIndex] = OFF;
+    _digitalOutputAssignmentClock[shadeDownPortIndex] = millis();
+  } else if (strcmp(command, "STOP") == 0) {
+    digitalWrite(_digitalOutputAssignment[shadeUpPortIndex][0], LOW);
+    digitalWrite(_digitalOutputAssignment[shadeDownPortIndex][0], LOW);
+    _digitalOutputAssignment[shadeUpPortIndex][3] = OFF;
+    _digitalOutputAssignment[shadeDownPortIndex][3] = OFF;
+    _digitalOutputAssignmentClock[shadeUpPortIndex] = OFF;
+    _digitalOutputAssignmentClock[shadeDownPortIndex] = OFF;
+  } else {
+    return false;
+  }
+
+  addToBuffer(1, buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", _digitalOutputAssignment[shadeUpPortIndex][3]));
+  addToBuffer(1, buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", _digitalOutputAssignment[shadeDownPortIndex][3]));
+  return true;
+}
+
+bool LanceControllinoRuntime::publishRetained(const char *topic, const char *payload)
+{
+  return _mqttClient.publish(topic, payload, true);
+}
+
+bool LanceControllinoRuntime::isPrimaryEntityOutput(int outputIndex) const
+{
+  return _controller.isOutputConfigured(outputIndex) && _controller.getOutputType(outputIndex) != LSHADEDOWN;
+}
+
+void LanceControllinoRuntime::buildEntityObjectId(int outputIndex, char *buffer, size_t bufferSize) const
+{
+  snprintf(
+    buffer,
+    bufferSize,
+    "%s_%s_%d",
+    outputTypeToEntityComponent(_controller.getOutputType(outputIndex)),
+    _controller.getOutputZone(outputIndex),
+    _controller.getOutputZoneIndex(outputIndex)
+  );
+}
+
+void LanceControllinoRuntime::buildEntityTopics(int outputIndex, char *stateTopic, size_t stateTopicSize, char *commandTopic, size_t commandTopicSize) const
+{
+  char objectId[_maxTopicLength];
+  buildEntityObjectId(outputIndex, objectId, sizeof(objectId));
+
+  snprintf(stateTopic, stateTopicSize, "controllino/%s/%s/%s/state", _clientId, outputTypeToEntityComponent(_controller.getOutputType(outputIndex)), objectId);
+  snprintf(commandTopic, commandTopicSize, "controllino/%s/%s/%s/set", _clientId, outputTypeToEntityComponent(_controller.getOutputType(outputIndex)), objectId);
+}
+
+void LanceControllinoRuntime::publishHomeAssistantStateForOutput(int outputIndex)
+{
+  if (!isPrimaryEntityOutput(outputIndex)) {
+    return;
+  }
+
+  char stateTopic[_maxTopicLength];
+  char commandTopic[_maxTopicLength];
+  buildEntityTopics(outputIndex, stateTopic, sizeof(stateTopic), commandTopic, sizeof(commandTopic));
+
+  switch (_controller.getOutputType(outputIndex)) {
+    case LLIGHT:
+    case LFAN:
+      publishRetained(stateTopic, _controller.getOutputStatus(outputIndex) == ON ? "ON" : "OFF");
+      break;
+    case LSHADEUP:
+      publishRetained(stateTopic, coverStateToPayload(_controller.getCoverState(String(_controller.getOutputZone(outputIndex)), _controller.getOutputZoneIndex(outputIndex))));
+      break;
+  }
+}
+
+void LanceControllinoRuntime::publishAllHomeAssistantStates()
+{
+  for (int i = 0; i < _controller.getOutputCount(); i++) {
+    publishHomeAssistantStateForOutput(i);
+  }
+}
+
+bool LanceControllinoRuntime::publishHomeAssistantStateFromMessage(const String &message)
+{
+  String type;
+  String zone;
+  String status;
+  int index = 0;
+  (void)status;
+
+  if (!LanceControllino::parseMQTTMessage(message, type, zone, index, status)) {
+    return true;
+  }
+
+  for (int i = 0; i < _controller.getOutputCount(); i++) {
+    if (!isPrimaryEntityOutput(i)) {
+      continue;
+    }
+
+    if (String(_controller.getOutputZone(i)) != zone || _controller.getOutputZoneIndex(i) != index) {
+      continue;
+    }
+
+    if ((type == "LIGHT" && _controller.getOutputType(i) == LLIGHT) ||
+        (type == "FAN" && _controller.getOutputType(i) == LFAN) ||
+        ((type == "SHADEUP" || type == "SHADEDOWN") && _controller.getOutputType(i) == LSHADEUP)) {
+      publishHomeAssistantStateForOutput(i);
+      return true;
+    }
+  }
+
+  return true;
+}
+
+bool LanceControllinoRuntime::handleHomeAssistantCommandTopic(const char *topic, const char *payload)
+{
+  for (int i = 0; i < _controller.getOutputCount(); i++) {
+    if (!isPrimaryEntityOutput(i)) {
+      continue;
+    }
+
+    char stateTopic[_maxTopicLength];
+    char commandTopic[_maxTopicLength];
+    buildEntityTopics(i, stateTopic, sizeof(stateTopic), commandTopic, sizeof(commandTopic));
+
+    if (strcmp(topic, commandTopic) != 0) {
+      continue;
+    }
+
+    Serial.print("Matched command topic: ");
+    Serial.println(topic);
+
+    switch (_controller.getOutputType(i)) {
+      case LLIGHT:
+        if (strcmp(payload, "ON") == 0 || strcmp(payload, "OFF") == 0) {
+          return _controller.processExternalRequest(_controller.getOutputPort(i), strcmp(payload, "ON") == 0 ? ON : OFF);
+        }
+        return false;
+      case LFAN:
+        if (strcmp(payload, "ON") == 0 || strcmp(payload, "OFF") == 0) {
+          return _controller.processExternalRequest(_controller.getOutputPort(i), strcmp(payload, "ON") == 0 ? ON : OFF);
+        }
+        return false;
+      case LSHADEUP:
+        return _controller.processCoverCommand(_controller.getOutputZone(i), _controller.getOutputZoneIndex(i), payload);
+    }
+  }
+
+  return false;
 }
 
 int LanceControllino::readKey(int analogInputPin)
