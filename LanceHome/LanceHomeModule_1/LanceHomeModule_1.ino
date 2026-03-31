@@ -1,0 +1,82 @@
+// Last update: 8/29/2022
+#include "LanceControllino.h"
+
+#define MQTT_EVENTS true
+
+#define ANALOG_INPUT_ASSIGNMENT_RW 29
+int analogInputAssignment[ANALOG_INPUT_ASSIGNMENT_RW][3] = {
+  {AI00,BTN0,DO07},
+  {AI00,BTN1,RO08},
+  {AI01,BTN0,RO04},
+  {AI01,BTN1,DO06},
+  {AI01,BTN2,DO07},
+  {AI01,BTN3,RO07},
+  {AI02,BTN0,RO03},
+  {AI02,BTN1,DO05},
+  {AI02,BTN2,RO01},
+  {AI02,BTN3,RO07},
+  {AI04,BTN0,RO07},
+  {AI04,BTN1,RO05},
+  {AI04,BTN2,RO01},
+  {AI05,BTN1,DO03},
+  {AI05,BTN2,DO07},
+  {AI05,BTN3,RO02},
+  {AI06,BTN0,DO07},
+  {AI06,BTN1,RO09},
+  {AI06,BTN2,DO02},
+  {AI06,BTN3,RO01},
+  {AI08,BTN0,DO04},
+  {AI08,BTN1,DO07},
+  {AI08,BTN2,RO06},
+  {AI08,BTN3,DO02},
+  {AI09,BTN0,RO09},
+  {AI09,BTN1,RO00},
+  {AI09,BTN2,DO00},
+  {AI09,BTN3,DO01},
+  {AI10,BTN1,RO02}
+};
+
+#define DIGITAL_OUTPUT_ASSIGNMENT_RW 18
+int digitalOutputAssignment[DIGITAL_OUTPUT_ASSIGNMENT_RW][3] = {
+  {DO00,LLIGHT,      GROUPNONE},
+  {DO01,LLIGHT,      GROUPNONE},
+  {DO02,LLIGHT,      GROUPNONE},
+  {DO03,LLIGHT,      GROUPNONE},
+  {DO04,LLIGHT,      GROUPNONE},
+  {DO05,LLIGHT,      GROUPNONE},
+  {DO06,LLIGHT,      GROUPNONE},
+  {DO07,LLIGHT,      GROUPNONE},
+  {RO00,LLIGHT,      GROUPNONE},
+  {RO01,LLIGHT,      GROUPNONE},
+  {RO02,LLIGHT,      GROUPNONE},
+  {RO03,LLIGHT,      GROUPNONE},
+  {RO04,LLIGHT,      GROUPNONE},
+  {RO05,LLIGHT,      GROUPNONE},
+  {RO06,LLIGHT,      GROUPNONE},
+  {RO07,LLIGHT,      GROUPNONE},
+  {RO08,LLIGHT,      GROUPNONE},
+  {RO09,LLIGHT,      GROUPNONE}
+};
+
+LanceControllino lanceControllino(
+  analogInputAssignment,
+  digitalOutputAssignment,
+  ANALOG_INPUT_ASSIGNMENT_RW,
+  DIGITAL_OUTPUT_ASSIGNMENT_RW,
+  MQTT_EVENTS
+);
+
+LanceControllinoRuntime lanceRuntime(
+  lanceControllino,
+  MQTT_EVENTS
+);
+
+void setup()
+{
+  lanceRuntime.setup();
+}
+
+void loop()
+{
+  lanceRuntime.loop();
+}
