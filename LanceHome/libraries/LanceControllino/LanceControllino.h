@@ -101,6 +101,17 @@
 #define GROUP112 112
 #define GROUPNONE -1
 
+// Zone assignment
+#define ZONE_NONE "none"
+#define ZONE_OUTSIDE "outside"
+#define ZONE_LIVING_ROOM "living_room"
+#define ZONE_KITCHEN "kitchen"
+#define ZONE_BATH_ROOM "bath_room"
+#define ZONE_KID_ROOM "kid_room"
+#define ZONE_BED_ROOM "bed_room"
+#define ZONE_WORKING_ROOM "working_room"
+#define ZONE_MAINTENANCE_ROOM "maintenance_room"
+
 //Analog port availability
 #define DISABLED 0
 #define ENABLED 1
@@ -116,13 +127,24 @@
 #define _ANALOG_INPUT_ASSIGNMENT_SIZE 48
 #define _DIGITAL_OUTPUT_ASSIGNMENT_SIZE 18
 #define _DIGITAL_OUTPUT_ASSIGNMENT_CLOCK_SIZE 18
-#define _TOPIC_MESSAGE_LENGTH 40
+#define _TOPIC_MESSAGE_LENGTH 96
 #define _MESSAGE_BUFFER_SIZE 20  // RingBuf capacity - if exceeded, messages are dropped
 #define SERIAL_BAUD_RATE 115200
+
+#ifndef ETHERNET_CHIP_SELECT_PIN
+#define ETHERNET_CHIP_SELECT_PIN -1
+#endif
+
+#ifndef ENABLE_HOME_ASSISTANT_MQTT
+#define ENABLE_HOME_ASSISTANT_MQTT 1
+#endif
 
 #define PRESSED_BTN_COUNT 2
 #define RUN_FUN_COUNT 300000
 #define RUN_SHADE_COUNT 50000
+#define COVER_STATE_STOPPED 0
+#define COVER_STATE_OPENING 1
+#define COVER_STATE_CLOSING 2
 
 /*
 TIMING NOTES:
@@ -134,18 +156,40 @@ To handle overflow correctly, always use unsigned integer subtraction:
 The subtraction method works because unsigned overflow is well-defined in C++.
 */
 
+struct DigitalOutputConfig
+{
+  int port;
+  int type;
+  int group;
+  const char *zone;
+  int index;
+};
+
 class LanceControllino
 {
   public:
-    LanceControllino(int analogAssignment[][3], int digitalAssignment[][3], int analogAssignmentSize, int digitalAssignmentSize);
-    LanceControllino(int analogAssignment[][3], int digitalAssignment[][3], int analogAssignmentSize, int digitalAssignmentSize, bool events);
-    static bool parseMQTTMessage(const String &message, String &type, String &port, String &status);
+    LanceControllino(int analogAssignment[][3], DigitalOutputConfig digitalAssignment[], int analogAssignmentSize, int digitalAssignmentSize);
+    LanceControllino(int analogAssignment[][3], DigitalOutputConfig digitalAssignment[], int analogAssignmentSize, int digitalAssignmentSize, bool events);
+    static bool parseMQTTMessage(const String &message, String &type, String &zone, int &index, String &status);
+    static bool parseLegacyMQTTMessage(const String &message, String &type, int &port, String &status);
     void analogInputVerification();
     void statusTimeVerification();
+    bool processExternalRequest(const String &type, const String &zone, int index, int status);
     bool processExternalRequest(int port, int status);
+    bool processCoverCommand(const String &zone, int index, const String &command);
+    bool processCoverCommand(const char *zone, int index, const char *command);
     bool addToBuffer(int topic, String message);
     bool pullFromBuffer();
     void getBufferStats(unsigned int &dropped, unsigned int &total);  // Get buffer overflow statistics
+    int getOutputCount() const;
+    bool isOutputConfigured(int outputIndex) const;
+    int getOutputPort(int outputIndex) const;
+    int getOutputType(int outputIndex) const;
+    int getOutputGroup(int outputIndex) const;
+    int getOutputStatus(int outputIndex) const;
+    const char *getOutputZone(int outputIndex) const;
+    int getOutputZoneIndex(int outputIndex) const;
+    int getCoverState(const String &zone, int index) const;
 
     struct _eventMessage
       {
@@ -162,11 +206,13 @@ class LanceControllino
     unsigned int _totalAddedCount = 0;      // Total messages attempted to add (for debugging)
 
   private:
-    bool initialization(int analogAssignment[][3], int digitalAssignment[][3], int analogAssignmentSize, int digitalAssignmentSize);
+    bool initialization(int analogAssignment[][3], DigitalOutputConfig digitalAssignment[], int analogAssignmentSize, int digitalAssignmentSize);
     bool portActivation();
     bool lightOperation(int port, int status = -1);
     bool shadeOperation(int port, int status = -1);
     bool fanOperation(int port, int status = -1);
+    String buildMqttStatusMessage(int outputIndex, const char *typeName, int status);
+    int findOutputIndexByIdentity(const String &type, const String &zone, int index);
     void debuger();
 
     int readKey(int analogInputPin);
@@ -221,6 +267,14 @@ class LanceControllino
     {RO04,TYPENONE,GROUPNONE,OFF},{RO05,TYPENONE,GROUPNONE,OFF},{RO06,TYPENONE,GROUPNONE,OFF},{RO07,TYPENONE,GROUPNONE,OFF},
     {RO08,TYPENONE,GROUPNONE,OFF},{RO09,TYPENONE,GROUPNONE,OFF}};
 
+    const char *_digitalOutputZones[_DIGITAL_OUTPUT_ASSIGNMENT_SIZE] = {
+      ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE,
+      ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE
+    };
+    int _digitalOutputZoneIndexes[_DIGITAL_OUTPUT_ASSIGNMENT_SIZE] = {
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
+
     /* _digitalOutputAssignmentClock
       Array extends _digitalOutputAssignment to capture millis (current time) if Fan or Shade operations are being processed.
       OFF - 0
@@ -242,11 +296,17 @@ class LanceControllinoRuntime
   private:
     static LanceControllinoRuntime *_activeInstance;
 
-    static const unsigned int _maxMQTTMessageLength = 100;
+    static const unsigned int _maxMQTTMessageLength = 128;
+#if ENABLE_HOME_ASSISTANT_MQTT
+    static const unsigned int _maxTopicLength = 96;
+    static const unsigned int _maxMQTTPacketSize = 192;
+#else
     static const unsigned int _maxTopicLength = 64;
+    static const unsigned int _maxMQTTPacketSize = 256;
+#endif
     static const unsigned long _statusInterval = 200;
     static const unsigned long _analogInputInterval = 40;
-    static const unsigned long _mqttReconnectInterval = 60000;
+    static const unsigned long _mqttReconnectInterval = 5000;
     static const unsigned long _mqttLoopInterval = 200;
     static const unsigned long _bufferStatsInterval = 30000;
 
@@ -268,6 +328,8 @@ class LanceControllinoRuntime
     char _mqttMainTopicSubscribe[_maxTopicLength];
     char _mqttMainTopicPublishAdmin[_maxTopicLength];
     char _mqttMainTopicPublishNormal[_maxTopicLength];
+    char _mqttAvailabilityTopic[_maxTopicLength];
+    char _mqttCommandSubscribeTopic[_maxTopicLength];
     bool _mqttEvents;
     unsigned long _currentTime;
     unsigned long _previousStatusTime;
@@ -281,6 +343,14 @@ class LanceControllinoRuntime
     void configureMqttTopics(const char *topicBaseName);
     static IPAddress parseIPAddress(const char *ipStr);
     void publishFromBuffer();
+    bool publishRetained(const char *topic, const char *payload);
+    bool publishHomeAssistantStateFromMessage(const String &message);
+    void publishHomeAssistantStateForOutput(int outputIndex);
+    void publishAllHomeAssistantStates();
+    bool handleHomeAssistantCommandTopic(const char *topic, const char *payload);
+    bool isPrimaryEntityOutput(int outputIndex) const;
+    void buildEntityObjectId(int outputIndex, char *buffer, size_t bufferSize) const;
+    void buildEntityTopics(int outputIndex, char *stateTopic, size_t stateTopicSize, char *commandTopic, size_t commandTopicSize) const;
     void connectMQTTIfNeeded();
     void printBufferStats();
 };
