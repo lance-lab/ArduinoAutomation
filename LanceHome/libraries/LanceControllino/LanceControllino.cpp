@@ -5,8 +5,44 @@
 */
 
 #include <Controllino.h>
+#include <Ethernet.h>
+#include <stdio.h>
 #include "RingBuf.h"
 #include "LanceControllino.h"
+
+LanceControllinoRuntime *LanceControllinoRuntime::_activeInstance = NULL;
+
+namespace {
+const __FlashStringHelper *hardwareStatusToText(EthernetHardwareStatus status)
+{
+  switch (status) {
+    case EthernetNoHardware:
+      return F("EthernetNoHardware");
+    case EthernetW5100:
+      return F("EthernetW5100");
+    case EthernetW5200:
+      return F("EthernetW5200");
+    case EthernetW5500:
+      return F("EthernetW5500");
+    default:
+      return F("Unknown");
+  }
+}
+
+const __FlashStringHelper *linkStatusToText(EthernetLinkStatus status)
+{
+  switch (status) {
+    case Unknown:
+      return F("Unknown");
+    case LinkON:
+      return F("LinkON");
+    case LinkOFF:
+      return F("LinkOFF");
+    default:
+      return F("Unknown");
+  }
+}
+}
 
 LanceControllino::LanceControllino(int analogAssignment[][3], int digitalAssignment[][3], int analogAssignmentSize, int digitalAssignmentSize) 
 {
@@ -21,6 +57,303 @@ LanceControllino::LanceControllino(int analogAssignment[][3], int digitalAssignm
   _portActivated = portActivation();
   _eventActivated = events;
 }  
+
+bool LanceControllino::parseMQTTMessage(const String &message, String &type, String &port, String &status)
+{
+  int typePos = message.indexOf("TYPE=");
+  int portPos = message.indexOf("PORT=");
+  int statusPos = message.indexOf("STATUS=");
+
+  if (typePos == -1 || portPos == -1 || statusPos == -1) {
+    Serial.println("ERROR: Missing required MQTT fields");
+    return false;
+  }
+
+  int typeEnd = message.indexOf(":", typePos);
+  int portEnd = message.indexOf(":", portPos);
+  int statusEnd = message.indexOf(":", statusPos);
+
+  if (typeEnd == -1) typeEnd = message.length();
+  if (portEnd == -1) portEnd = message.length();
+  if (statusEnd == -1) statusEnd = message.length();
+
+  type = message.substring(typePos + 5, typeEnd);
+  port = message.substring(portPos + 5, portEnd);
+  status = message.substring(statusPos + 7, statusEnd);
+
+  if (status != "ON" && status != "OFF") {
+    Serial.println("ERROR: Invalid STATUS value: " + status);
+    return false;
+  }
+
+  int portInt = port.toInt();
+  if (portInt <= 0 && port != "0") {
+    Serial.println("ERROR: Invalid PORT value: " + port);
+    return false;
+  }
+
+  return true;
+}
+
+LanceControllinoRuntime::LanceControllinoRuntime(LanceControllino &controller,
+                                                 bool mqttEvents)
+  : _controller(controller),
+    _mqttClient(_ethClient),
+    _localIp(0, 0, 0, 0),
+    _gatewayIp(0, 0, 0, 0),
+    _subnetMask(0, 0, 0, 0),
+    _mqttServerIp(0, 0, 0, 0),
+    _mqttPort(0),
+    _clientId(NULL),
+    _mqttUserName(NULL),
+    _mqttPassword(NULL),
+    _mqttEvents(mqttEvents),
+    _currentTime(0),
+    _previousStatusTime(0),
+    _previousAnalogTime(0),
+    _previousMQTTReconnectTime(0),
+    _previousMQTTLoopTime(0),
+    _previousBufferStatsTime(0)
+{
+  memset(_mac, 0, sizeof(_mac));
+  memset(&_credentials, 0, sizeof(_credentials));
+  configureMqttTopics(NULL);
+}
+
+void LanceControllinoRuntime::printStartupBanner()
+{
+  const char *deviceName = _clientId;
+
+  if (deviceName == NULL || deviceName[0] == '\0') {
+    deviceName = "LanceControllino";
+  }
+
+  Serial.println("\n====================================");
+  Serial.println(String("    ") + deviceName + " Startup");
+  Serial.println("====================================\n");
+}
+
+bool LanceControllinoRuntime::loadCredentialsFromEEPROM()
+{
+  if (!CredentialManager::loadCredentials(_credentials)) {
+    Serial.println("\nFATAL ERROR: Cannot load device configuration from EEPROM!");
+    Serial.println("Please upload SetCredentials.ino first to program your device details");
+    return false;
+  }
+
+  memcpy(_mac, _credentials.mac, sizeof(_mac));
+  _localIp = IPAddress(_credentials.localIp[0], _credentials.localIp[1], _credentials.localIp[2], _credentials.localIp[3]);
+  _gatewayIp = IPAddress(_credentials.gatewayIp[0], _credentials.gatewayIp[1], _credentials.gatewayIp[2], _credentials.gatewayIp[3]);
+  _subnetMask = IPAddress(_credentials.subnetMask[0], _credentials.subnetMask[1], _credentials.subnetMask[2], _credentials.subnetMask[3]);
+  _mqttPort = _credentials.mqttPort;
+  _clientId = _credentials.mqttClientId;
+  _mqttUserName = _credentials.mqttUser;
+  _mqttPassword = _credentials.mqttPass;
+  _mqttServerIp = parseIPAddress(_credentials.mqttServer);
+  configureMqttTopics(_clientId);
+
+  Serial.print("Local IP: ");
+  Serial.println(_localIp);
+  Serial.println("MQTT Broker: " + String(_credentials.mqttServer));
+  Serial.println("MQTT Client ID: " + String(_credentials.mqttClientId));
+  return true;
+}
+
+void LanceControllinoRuntime::configureMqttTopics(const char *topicBaseName)
+{
+  const char *baseName = topicBaseName;
+
+  if (baseName == NULL || baseName[0] == '\0') {
+    _mqttMainTopicPublishNormal[0] = '\0';
+    _mqttMainTopicPublishAdmin[0] = '\0';
+    _mqttMainTopicSubscribe[0] = '\0';
+    return;
+  }
+
+  snprintf(_mqttMainTopicPublishNormal, sizeof(_mqttMainTopicPublishNormal), "%s/in/normal", baseName);
+  snprintf(_mqttMainTopicPublishAdmin, sizeof(_mqttMainTopicPublishAdmin), "%s/in/admin", baseName);
+  snprintf(_mqttMainTopicSubscribe, sizeof(_mqttMainTopicSubscribe), "%s/out", baseName);
+}
+
+IPAddress LanceControllinoRuntime::parseIPAddress(const char *ipStr)
+{
+  int parts[4] = {0, 0, 0, 0};
+  sscanf(ipStr, "%d.%d.%d.%d", &parts[0], &parts[1], &parts[2], &parts[3]);
+  return IPAddress((uint8_t)parts[0], (uint8_t)parts[1], (uint8_t)parts[2], (uint8_t)parts[3]);
+}
+
+void LanceControllinoRuntime::setup()
+{
+  _activeInstance = this;
+
+  Serial.begin(SERIAL_BAUD_RATE);
+  Serial.setTimeout(50);
+
+  if (!_mqttEvents) {
+    Serial.println("\n====================================");
+    Serial.println("    LanceControllino Offline Startup");
+    Serial.println("====================================\n");
+    Serial.println("MQTT events disabled, skipping EEPROM, Ethernet, and MQTT setup");
+    Serial.println("Starting watchdog timer (8 seconds)...");
+    wdt_enable(WDTO_8S);
+    Serial.println("Setup complete!\n");
+    return;
+  }
+
+  if (!loadCredentialsFromEEPROM()) {
+    while (1) {
+      digitalWrite(LED_BUILTIN, HIGH);
+      delay(100);
+      digitalWrite(LED_BUILTIN, LOW);
+      delay(100);
+    }
+  }
+
+  printStartupBanner();
+
+  //Ethernet.init(10);
+  Ethernet.begin(_mac, _localIp, _gatewayIp, _gatewayIp, _subnetMask);
+  Serial.println("Ethernet initialized");
+  Serial.print("Hardware status: ");
+  Serial.println(hardwareStatusToText(Ethernet.hardwareStatus()));
+  Serial.print("Link status: ");
+  Serial.println(linkStatusToText(Ethernet.linkStatus()));
+  Serial.print("Local IP: ");
+  Serial.println(Ethernet.localIP());
+  Serial.print("Subnet mask: ");
+  Serial.println(Ethernet.subnetMask());
+  Serial.print("Gateway IP: ");
+  Serial.println(Ethernet.gatewayIP());
+  Serial.print("MQTT target: ");
+  Serial.print(_mqttServerIp);
+  Serial.print(":");
+  Serial.println(_mqttPort);
+
+  _mqttClient.setClient(_ethClient);
+  _mqttClient.setServer(_mqttServerIp, _mqttPort);
+  _mqttClient.setCallback(LanceControllinoRuntime::mqttCallbackRouter);
+
+  connectMQTTIfNeeded();
+
+  Serial.println("Starting watchdog timer (8 seconds)...");
+  wdt_enable(WDTO_8S);
+  Serial.println("Setup complete!\n");
+}
+
+void LanceControllinoRuntime::handleMQTTCallback(char* topic, byte* payload, unsigned int length)
+{
+  (void)topic;
+
+  if (length == 0 || length > _maxMQTTMessageLength) {
+    return;
+  }
+
+  String message;
+  String type;
+  String port;
+  String status;
+
+  for (unsigned int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+
+  if (LanceControllino::parseMQTTMessage(message, type, port, status)) {
+    int statusInt = (status == "ON") ? ON : OFF;
+    int portInt = port.toInt();
+
+    Serial.println("type=" + type + " port=" + port + " status=" + status);
+    _controller.processExternalRequest(portInt, statusInt);
+  } else {
+    Serial.println("MQTT parse error: " + message);
+  }
+}
+
+void LanceControllinoRuntime::mqttCallbackRouter(char* topic, byte* payload, unsigned int length)
+{
+  if (_activeInstance != NULL) {
+    _activeInstance->handleMQTTCallback(topic, payload, length);
+  }
+}
+
+void LanceControllinoRuntime::publishFromBuffer()
+{
+  if (_controller.pullFromBuffer()) {
+    _mqttClient.publish(_mqttMainTopicPublishNormal, _controller.bufferPull._topicMessage);
+  }
+}
+
+void LanceControllinoRuntime::connectMQTTIfNeeded()
+{
+  if (!_mqttEvents || _mqttClient.connected()) {
+    return;
+  }
+
+  Serial.println("Attempting MQTT connection...");
+  if (_mqttClient.connect(_clientId, _mqttUserName, _mqttPassword)) {
+    Serial.println("MQTT connected");
+    _mqttClient.publish(_mqttMainTopicPublishAdmin, ("HALLO:" + String(_clientId) + ":INIT").c_str());
+    _mqttClient.subscribe(_mqttMainTopicSubscribe);
+  } else {
+    Serial.println("Failed to connect to MQTT broker");
+    Serial.print("MQTT state: ");
+    Serial.println(_mqttClient.state());
+  }
+}
+
+void LanceControllinoRuntime::printBufferStats()
+{
+  if (!_mqttEvents) {
+    return;
+  }
+
+  unsigned int droppedMessages = 0;
+  unsigned int totalMessages = 0;
+  _controller.getBufferStats(droppedMessages, totalMessages);
+
+  if (droppedMessages > 0) {
+    Serial.println("WARNING: Buffer overflow detected!");
+    Serial.println("Dropped messages: " + String(droppedMessages) + " / " + String(totalMessages));
+  } else if (totalMessages > 0) {
+    Serial.println("Buffer OK - Messages published: " + String(totalMessages));
+  }
+}
+
+void LanceControllinoRuntime::loop()
+{
+  _currentTime = millis();
+
+  if ((_currentTime - _previousStatusTime) >= _statusInterval) {
+    _previousStatusTime = _currentTime;
+    if (_mqttEvents) {
+      publishFromBuffer();
+    }
+    _controller.statusTimeVerification();
+  }
+
+  if ((_currentTime - _previousAnalogTime) >= _analogInputInterval) {
+    _previousAnalogTime = _currentTime;
+    _controller.analogInputVerification();
+  }
+
+  if ((_currentTime - _previousMQTTReconnectTime) >= _mqttReconnectInterval) {
+    _previousMQTTReconnectTime = _currentTime;
+    connectMQTTIfNeeded();
+  }
+
+  if ((_currentTime - _previousMQTTLoopTime) >= _mqttLoopInterval) {
+    _previousMQTTLoopTime = _currentTime;
+    if (_mqttEvents) {
+      _mqttClient.loop();
+    }
+  }
+
+  if ((_currentTime - _previousBufferStatsTime) >= _bufferStatsInterval) {
+    _previousBufferStatsTime = _currentTime;
+    printBufferStats();
+  }
+
+  wdt_reset();
+}
 
 bool LanceControllino::initialization(int analogAssignment[][3], int digitalAssignment[][3], int analogAssignmentSize, int digitalAssignmentSize) 
 {
@@ -76,7 +409,13 @@ bool LanceControllino::initialization(int analogAssignment[][3], int digitalAssi
 
 bool LanceControllino::addToBuffer(int topic, String message)
 {
+  /*
+  Add message to event buffer. Returns false if buffer is full (overflow).
+  When buffer overflows, the message is dropped and overflow counter increments.
+  This indicates that the MQTT publish loop is not reading messages fast enough.
+  */
   if (_eventActivated == true) {
+    _totalAddedCount++;
     memset(&bufferAdd, 0, sizeof(struct _eventMessage));
 
     bufferAdd._topic = topic;
@@ -85,6 +424,13 @@ bool LanceControllino::addToBuffer(int topic, String message)
     if(_messageBuffer->add(_messageBuffer, &bufferAdd) != -1){
       return true;
     }
+    
+    // Buffer overflow occurred
+    _droppedMessageCount++;
+    Serial.println("ERROR: Event buffer overflow! Dropped message. Total dropped: " + String(_droppedMessageCount));
+    Serial.println("Message: " + message);
+    Serial.println("Buffer size: " + String(_MESSAGE_BUFFER_SIZE) + " | Dropped: " + String(_droppedMessageCount) + " / " + String(_totalAddedCount));
+    
     return false;
   }
   return true;
@@ -101,6 +447,19 @@ bool LanceControllino::pullFromBuffer()
     return false;
   }
   return false;
+}
+
+void LanceControllino::getBufferStats(unsigned int &dropped, unsigned int &total)
+{
+  /*
+  Get buffer overflow statistics for monitoring.
+  - dropped: Number of messages dropped due to buffer overflow
+  - total: Total number of messages attempted to add
+  
+  Useful for diagnosing if the MQTT publish loop is too slow to handle the event rate.
+  */
+  dropped = _droppedMessageCount;
+  total = _totalAddedCount;
 }
 
 bool LanceControllino::portActivation()
@@ -147,7 +506,7 @@ void LanceControllino::analogInputVerification()
       else {
         for (int k=0; k<_ANALOG_INPUT_ASSIGNMENT_SIZE;k++) {
           if (_analogInputAssignment[k][0] == _analogInputs[0][i] && _analogInputAssignment[k][1] == pressedStatus) {
-            _analogInputAssignment[k][3] == _analogInputAssignment[k][3]++;
+            _analogInputAssignment[k][3]++;
             break;
           }
         }
@@ -204,14 +563,23 @@ bool LanceControllino::lightOperation(int port, int status)
         message = "TYPE=LIGHT:PORT=" + String(port) + ":STATUS=ON";
         addToBuffer(1, message);
       }
+    } else {
+      return false; // Could not find port
     }
   }
+  return true;
 }
 
 bool LanceControllino::shadeOperation(int port, int status) {
   //IF SHADE IS GOING UP AND BUTTON DOWN IS PRESSED IT SET ALL TO ZERO THAT STOP SHADE
 
   int shadeActionPortIndex = findElementColumn(_digitalOutputAssignment, _DIGITAL_OUTPUT_ASSIGNMENT_SIZE, port);
+  
+  // Return false if port not found
+  if (shadeActionPortIndex == -1) {
+    return false;
+  }
+  
   int shadeGroup = _digitalOutputAssignment[shadeActionPortIndex][2];
 
   int shadeUpPortIndex = -1;
@@ -285,6 +653,7 @@ bool LanceControllino::shadeOperation(int port, int status) {
       addToBuffer(1, messageDown);
     }
   }
+  return true;
 }
 
 bool LanceControllino::fanOperation(int port, int status)
@@ -337,22 +706,30 @@ bool LanceControllino::fanOperation(int port, int status)
         message = "TYPE=FAN:PORT=" + String(port) + ":STATUS=ON";
         addToBuffer(1, message);
       }
+    } else {
+      return false; // Could not find port
     }
   }
+  return true;
 }
 
 void LanceControllino::statusTimeVerification() {
-
+  /*
+  Verify timeout conditions for shades and fans.
+  Uses safe unsigned integer subtraction to handle millis() overflow (every ~49 days).
+  */
   for(int i=0; i<_DIGITAL_OUTPUT_ASSIGNMENT_SIZE; i++) {
     if (_digitalOutputAssignment[i][1] == LSHADEUP || _digitalOutputAssignment[i][1] == LSHADEDOWN) {
-      if (millis() > (_digitalOutputAssignmentClock[i] + RUN_SHADE_COUNT)) {
+      // Safe timeout check that works correctly with millis() overflow
+      if ((unsigned long)(millis() - _digitalOutputAssignmentClock[i]) >= RUN_SHADE_COUNT) {
         digitalWrite(_digitalOutputAssignment[i][0], LOW);
         _digitalOutputAssignment[i][3] = OFF;
         _digitalOutputAssignmentClock[i] = OFF;
       }
     }
     else if (_digitalOutputAssignment[i][1] == LFAN) {
-      if (millis() > (_digitalOutputAssignmentClock[i] + RUN_FUN_COUNT)) {
+      // Safe timeout check that works correctly with millis() overflow
+      if ((unsigned long)(millis() - _digitalOutputAssignmentClock[i]) >= RUN_FUN_COUNT) {
         digitalWrite(_digitalOutputAssignment[i][0], LOW);
         _digitalOutputAssignment[i][3] = OFF;
         _digitalOutputAssignmentClock[i] = OFF;
@@ -365,24 +742,44 @@ bool LanceControllino::processExternalRequest(int port, int status) {
 
   int digitalOutputAssignmentIndex = findElementColumn(_digitalOutputAssignment, _DIGITAL_OUTPUT_ASSIGNMENT_SIZE, port);
 
+  // Return false if port not found
+  if (digitalOutputAssignmentIndex == -1) {
+    return false;
+  }
+
   switch (_digitalOutputAssignment[digitalOutputAssignmentIndex][1]) {
     case LLIGHT: {lightOperation(port, status); break;}
     case LSHADEUP: {shadeOperation(port, status); break;}
     case LSHADEDOWN: {shadeOperation(port, status); break;}
     case LFAN: {fanOperation(port, status); break;}
   }
+  return true;
 }
 
 int LanceControllino::readKey(int analogInputPin)
 {
+  /*
+  Read analog button input and return which button is pressed.
+  Uses voltage divider thresholds to distinguish 4 buttons on a single analog input.
+  */
   int KeyIn = 0;
   KeyIn = analogRead(analogInputPin);
-  if (KeyIn <= 200) return BTNNONE;  
-  else if ((KeyIn > 200) && (KeyIn < 350)) return BTN3;  
-  else if ((KeyIn > 350) && (KeyIn < 550)) return BTN2;  
-  else if ((KeyIn > 550) && (KeyIn < 750)) return BTN1;  
-  else if (KeyIn >= 750) return BTN0;  
-  return BTNNONE;
+  
+  if (KeyIn <= ANALOG_BTN_NO_PRESS_THRESHOLD) {
+    return BTNNONE;  
+  }
+  else if (KeyIn < ANALOG_BTN3_THRESHOLD) {
+    return BTN3;  
+  }
+  else if (KeyIn < ANALOG_BTN2_THRESHOLD) {
+    return BTN2;  
+  }
+  else if (KeyIn < ANALOG_BTN1_THRESHOLD) {
+    return BTN1;  
+  }
+  else {
+    return BTN0;  
+  }
 }
 
 int LanceControllino::findElementRow(int array[], int lastElement, int searchKey) {//DEFINITION REQUIRES ARRAY NAME AND POINTER, AMOUNT OF VALUES IN THE ROW, SEARCHING KEY 

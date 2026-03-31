@@ -5,7 +5,11 @@
 #ifndef LanceControllino_h
 #define LanceControllino_h
 
+#include <avr/wdt.h>
 #include <Controllino.h>
+#include <Ethernet.h>
+#include <PubSubClient.h>
+#include "CredentialManager.h"
 #include "RingBuf.h"
 
 
@@ -74,6 +78,14 @@
 #define BTN3 3
 #define BTNNONE 4
 
+//Analog button threshold values (ADC 0-1023 range)
+//These thresholds are used to distinguish between 4 buttons on a single analog input
+//Each button creates a different voltage divider ratio
+#define ANALOG_BTN_NO_PRESS_THRESHOLD 200
+#define ANALOG_BTN3_THRESHOLD 350
+#define ANALOG_BTN2_THRESHOLD 550
+#define ANALOG_BTN1_THRESHOLD 750
+
 //Group assignment
 #define GROUP101 101
 #define GROUP102 102
@@ -93,27 +105,47 @@
 #define DISABLED 0
 #define ENABLED 1
 
+// ARRAY SIZE DEFINITIONS
+// _ANALOG_INPUT_ASSIGNMENT_SIZE: Theoretical maximum = _ANALOG_INPUTS_SIZE × 4 buttons
+// (12 analog inputs × 4 possible buttons per input = 48 total slots)
+// This is pre-allocated as a configuration matrix. The initialization() function
+// populates only the used entries based on analogInputAssignment passed from the sketch.
+// Actual usage specified by ANALOG_INPUT_ASSIGNMENT_RW in the sketch (typically 29 entries).
 #define _ANALOG_INPUTS_SIZE 12
 #define _DIGITAL_OUTPUTS_SIZE 18
 #define _ANALOG_INPUT_ASSIGNMENT_SIZE 48
 #define _DIGITAL_OUTPUT_ASSIGNMENT_SIZE 18
 #define _DIGITAL_OUTPUT_ASSIGNMENT_CLOCK_SIZE 18
 #define _TOPIC_MESSAGE_LENGTH 40
+#define _MESSAGE_BUFFER_SIZE 20  // RingBuf capacity - if exceeded, messages are dropped
+#define SERIAL_BAUD_RATE 115200
 
 #define PRESSED_BTN_COUNT 2
 #define RUN_FUN_COUNT 300000
 #define RUN_SHADE_COUNT 50000
+
+/*
+TIMING NOTES:
+millis() returns an unsigned long that overflows every 49.7 days (2^32 milliseconds).
+To handle overflow correctly, always use unsigned integer subtraction:
+  CORRECT:   if ((unsigned long)(millis() - startTime) >= duration)
+  WRONG:     if (millis() > (startTime + duration))
+
+The subtraction method works because unsigned overflow is well-defined in C++.
+*/
 
 class LanceControllino
 {
   public:
     LanceControllino(int analogAssignment[][3], int digitalAssignment[][3], int analogAssignmentSize, int digitalAssignmentSize);
     LanceControllino(int analogAssignment[][3], int digitalAssignment[][3], int analogAssignmentSize, int digitalAssignmentSize, bool events);
+    static bool parseMQTTMessage(const String &message, String &type, String &port, String &status);
     void analogInputVerification();
     void statusTimeVerification();
     bool processExternalRequest(int port, int status);
     bool addToBuffer(int topic, String message);
     bool pullFromBuffer();
+    void getBufferStats(unsigned int &dropped, unsigned int &total);  // Get buffer overflow statistics
 
     struct _eventMessage
       {
@@ -123,7 +155,11 @@ class LanceControllino
 
     struct _eventMessage bufferAdd, bufferPull;
 
-    RingBuf *_messageBuffer = RingBuf_new(sizeof(struct _eventMessage), 20);
+    RingBuf *_messageBuffer = RingBuf_new(sizeof(struct _eventMessage), _MESSAGE_BUFFER_SIZE);
+    
+    // Buffer overflow tracking
+    unsigned int _droppedMessageCount = 0;  // Count of messages dropped due to buffer overflow
+    unsigned int _totalAddedCount = 0;      // Total messages attempted to add (for debugging)
 
   private:
     bool initialization(int analogAssignment[][3], int digitalAssignment[][3], int analogAssignmentSize, int digitalAssignmentSize);
@@ -192,5 +228,60 @@ class LanceControllino
     unsigned long _digitalOutputAssignmentClock [_DIGITAL_OUTPUT_ASSIGNMENT_CLOCK_SIZE] = {OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF};
 
 
+};
+
+class LanceControllinoRuntime
+{
+  public:
+    LanceControllinoRuntime(LanceControllino &controller, bool mqttEvents);
+    void setup();
+    void loop();
+    void handleMQTTCallback(char* topic, byte* payload, unsigned int length);
+    static void mqttCallbackRouter(char* topic, byte* payload, unsigned int length);
+
+  private:
+    static LanceControllinoRuntime *_activeInstance;
+
+    static const unsigned int _maxMQTTMessageLength = 100;
+    static const unsigned int _maxTopicLength = 64;
+    static const unsigned long _statusInterval = 200;
+    static const unsigned long _analogInputInterval = 40;
+    static const unsigned long _mqttReconnectInterval = 60000;
+    static const unsigned long _mqttLoopInterval = 200;
+    static const unsigned long _bufferStatsInterval = 30000;
+
+    LanceControllino &_controller;
+    EthernetClient _ethClient;
+    PubSubClient _mqttClient;
+    Credentials _credentials;
+
+    byte _mac[6];
+    IPAddress _localIp;
+    IPAddress _gatewayIp;
+    IPAddress _subnetMask;
+    IPAddress _mqttServerIp;
+    uint16_t _mqttPort;
+
+    const char *_clientId;
+    const char *_mqttUserName;
+    const char *_mqttPassword;
+    char _mqttMainTopicSubscribe[_maxTopicLength];
+    char _mqttMainTopicPublishAdmin[_maxTopicLength];
+    char _mqttMainTopicPublishNormal[_maxTopicLength];
+    bool _mqttEvents;
+    unsigned long _currentTime;
+    unsigned long _previousStatusTime;
+    unsigned long _previousAnalogTime;
+    unsigned long _previousMQTTReconnectTime;
+    unsigned long _previousMQTTLoopTime;
+    unsigned long _previousBufferStatsTime;
+
+    void printStartupBanner();
+    bool loadCredentialsFromEEPROM();
+    void configureMqttTopics(const char *topicBaseName);
+    static IPAddress parseIPAddress(const char *ipStr);
+    void publishFromBuffer();
+    void connectMQTTIfNeeded();
+    void printBufferStats();
 };
 #endif
