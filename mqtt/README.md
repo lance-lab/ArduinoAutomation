@@ -45,3 +45,28 @@ In another terminal:
 ```bash
 mosquitto_pub -h 127.0.0.1 -p 1883 -u lancehome -P 611632787d524d3f154f88e1 -t 'LanceControllino1/out' -m 'test'
 ```
+
+## Run Automatically On Fedora Boot
+
+This repo includes a `systemd` service file at `mqtt/arduinoautomation-mosquitto.service`.
+
+Install and enable it:
+
+```bash
+sudo cp /home/lance/Repositories/ArduinoAutomation/mqtt/arduinoautomation-mosquitto.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now arduinoautomation-mosquitto.service
+```
+
+Check status:
+
+```bash
+sudo systemctl status arduinoautomation-mosquitto.service
+sudo journalctl -u arduinoautomation-mosquitto.service -f
+```
+
+Notes:
+
+- The service runs as user `lance`.
+- It starts `/home/lance/Repositories/ArduinoAutomation/mqtt/start-local.sh`.
+- If your repo path or Linux username changes, update the service file before copying it into `/etc/systemd/system/`.
