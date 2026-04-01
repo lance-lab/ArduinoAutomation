@@ -107,6 +107,7 @@
 #define ZONE_LIVING_ROOM "living_room"
 #define ZONE_KITCHEN "kitchen"
 #define ZONE_BATH_ROOM "bath_room"
+#define ZONE_COMMON "common"
 #define ZONE_KID_ROOM "kid_room"
 #define ZONE_BED_ROOM "bed_room"
 #define ZONE_WORKING_ROOM "working_room"
@@ -171,14 +172,13 @@ class LanceControllino
     LanceControllino(int analogAssignment[][3], DigitalOutputConfig digitalAssignment[], int analogAssignmentSize, int digitalAssignmentSize);
     LanceControllino(int analogAssignment[][3], DigitalOutputConfig digitalAssignment[], int analogAssignmentSize, int digitalAssignmentSize, bool events);
     static bool parseMQTTMessage(const String &message, String &type, String &zone, int &index, String &status);
-    static bool parseLegacyMQTTMessage(const String &message, String &type, int &port, String &status);
     void analogInputVerification();
     void statusTimeVerification();
-    bool processExternalRequest(const String &type, const String &zone, int index, int status);
     bool processExternalRequest(int port, int status);
     bool processCoverCommand(const String &zone, int index, const String &command);
     bool processCoverCommand(const char *zone, int index, const char *command);
     bool addToBuffer(int topic, String message);
+    bool addToBuffer(int topic, const char *message);
     bool pullFromBuffer();
     void getBufferStats(unsigned int &dropped, unsigned int &total);  // Get buffer overflow statistics
     int getOutputCount() const;
@@ -211,8 +211,7 @@ class LanceControllino
     bool lightOperation(int port, int status = -1);
     bool shadeOperation(int port, int status = -1);
     bool fanOperation(int port, int status = -1);
-    String buildMqttStatusMessage(int outputIndex, const char *typeName, int status);
-    int findOutputIndexByIdentity(const String &type, const String &zone, int index);
+    void buildMqttStatusMessage(int outputIndex, const char *typeName, int status, char *buffer, size_t bufferSize);
     void debuger();
 
     int readKey(int analogInputPin);
@@ -325,9 +324,6 @@ class LanceControllinoRuntime
     const char *_clientId;
     const char *_mqttUserName;
     const char *_mqttPassword;
-    char _mqttMainTopicSubscribe[_maxTopicLength];
-    char _mqttMainTopicPublishAdmin[_maxTopicLength];
-    char _mqttMainTopicPublishNormal[_maxTopicLength];
     char _mqttAvailabilityTopic[_maxTopicLength];
     char _mqttCommandSubscribeTopic[_maxTopicLength];
     bool _mqttEvents;
