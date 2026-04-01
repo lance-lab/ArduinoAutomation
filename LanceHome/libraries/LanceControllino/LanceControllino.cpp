@@ -130,42 +130,6 @@ bool LanceControllino::parseMQTTMessage(const String &message, String &type, Str
   return true;
 }
 
-bool LanceControllino::parseLegacyMQTTMessage(const String &message, String &type, int &port, String &status)
-{
-  int typePos = message.indexOf("TYPE=");
-  int portPos = message.indexOf("PORT=");
-  int statusPos = message.indexOf("STATUS=");
-
-  if (typePos == -1 || portPos == -1 || statusPos == -1) {
-    return false;
-  }
-
-  int typeEnd = message.indexOf(":", typePos);
-  int portEnd = message.indexOf(":", portPos);
-  int statusEnd = message.indexOf(":", statusPos);
-
-  if (typeEnd == -1) typeEnd = message.length();
-  if (portEnd == -1) portEnd = message.length();
-  if (statusEnd == -1) statusEnd = message.length();
-
-  type = message.substring(typePos + 5, typeEnd);
-  String portText = message.substring(portPos + 5, portEnd);
-  status = message.substring(statusPos + 7, statusEnd);
-
-  if (status != "ON" && status != "OFF") {
-    Serial.println("ERROR: Invalid STATUS value: " + status);
-    return false;
-  }
-
-  port = portText.toInt();
-  if (port <= 0 && portText != "0") {
-    Serial.println("ERROR: Invalid PORT value: " + portText);
-    return false;
-  }
-
-  return true;
-}
-
 LanceControllinoRuntime::LanceControllinoRuntime(LanceControllino &controller,
                                                  bool mqttEvents)
   : _controller(controller),
@@ -235,17 +199,11 @@ void LanceControllinoRuntime::configureMqttTopics(const char *topicBaseName)
   const char *baseName = topicBaseName;
 
   if (baseName == NULL || baseName[0] == '\0') {
-    _mqttMainTopicPublishNormal[0] = '\0';
-    _mqttMainTopicPublishAdmin[0] = '\0';
-    _mqttMainTopicSubscribe[0] = '\0';
     _mqttAvailabilityTopic[0] = '\0';
     _mqttCommandSubscribeTopic[0] = '\0';
     return;
   }
 
-  _mqttMainTopicPublishNormal[0] = '\0';
-  _mqttMainTopicPublishAdmin[0] = '\0';
-  _mqttMainTopicSubscribe[0] = '\0';
   snprintf(_mqttAvailabilityTopic, sizeof(_mqttAvailabilityTopic), "controllino/%s/status", baseName);
   snprintf(_mqttCommandSubscribeTopic, sizeof(_mqttCommandSubscribeTopic), "controllino/%s/+/+/set", baseName);
 }
@@ -328,20 +286,17 @@ void LanceControllinoRuntime::handleMQTTCallback(char* topic, byte* payload, uns
     return;
   }
 
+  char topicText[_maxTopicLength];
+  strncpy(topicText, topic, sizeof(topicText) - 1);
+  topicText[sizeof(topicText) - 1] = '\0';
+
   char payloadText[_maxMQTTMessageLength + 1];
   memcpy(payloadText, payload, length);
   payloadText[length] = '\0';
 
-  Serial.print("MQTT RX topic: ");
-  Serial.println(topic);
-  Serial.print("MQTT RX payload: ");
-  Serial.println(payloadText);
-
-  if (handleHomeAssistantCommandTopic(topic, payloadText)) {
+  if (handleHomeAssistantCommandTopic(topicText, payloadText)) {
     return;
   }
-  Serial.print("Ignoring unknown MQTT topic: ");
-  Serial.println(topic);
 }
 
 void LanceControllinoRuntime::mqttCallbackRouter(char* topic, byte* payload, unsigned int length)
@@ -360,10 +315,7 @@ void LanceControllinoRuntime::publishFromBuffer()
   if (_controller.pullFromBuffer()) {
     String bufferedMessage = String(_controller.bufferPull._topicMessage);
 
-    if (!publishHomeAssistantStateFromMessage(bufferedMessage)) {
-      Serial.println("ERROR: MQTT publish failed, re-queueing event");
-      _controller.addToBuffer(_controller.bufferPull._topic, bufferedMessage);
-    }
+    publishHomeAssistantStateFromMessage(bufferedMessage);
   }
 }
 
@@ -379,6 +331,7 @@ void LanceControllinoRuntime::connectMQTTIfNeeded()
     publishRetained(_mqttAvailabilityTopic, "online");
     if (_mqttClient.subscribe(_mqttCommandSubscribeTopic)) {
       Serial.println("Subscribed to: " + String(_mqttCommandSubscribeTopic));
+      publishAllHomeAssistantStates();
     } else {
       Serial.println("ERROR: MQTT subscribe failed: " + String(_mqttCommandSubscribeTopic));
     }
@@ -526,6 +479,7 @@ bool LanceControllino::addToBuffer(int topic, String message)
   When buffer overflows, the message is dropped and overflow counter increments.
   This indicates that the MQTT publish loop is not reading messages fast enough.
   */
+
   if (_eventActivated == true) {
     _totalAddedCount++;
     memset(&bufferAdd, 0, sizeof(struct _eventMessage));
@@ -543,6 +497,35 @@ bool LanceControllino::addToBuffer(int topic, String message)
     Serial.println("Message: " + message);
     Serial.println("Buffer size: " + String(_MESSAGE_BUFFER_SIZE) + " | Dropped: " + String(_droppedMessageCount) + " / " + String(_totalAddedCount));
     
+    return false;
+  }
+  return true;
+}
+
+bool LanceControllino::addToBuffer(int topic, const char *message)
+{
+  /*
+  Add a null-terminated C string to the event buffer without creating a temporary
+  Arduino String. This avoids extra heap churn on AVR during hot publish paths.
+  */
+  if (_eventActivated == true) {
+    _totalAddedCount++;
+    memset(&bufferAdd, 0, sizeof(struct _eventMessage));
+
+    bufferAdd._topic = topic;
+    strncpy(bufferAdd._topicMessage, message, sizeof(bufferAdd._topicMessage) - 1);
+    bufferAdd._topicMessage[sizeof(bufferAdd._topicMessage) - 1] = '\0';
+
+    if(_messageBuffer->add(_messageBuffer, &bufferAdd) != -1){
+      return true;
+    }
+
+    _droppedMessageCount++;
+    Serial.println("ERROR: Event buffer overflow! Dropped message. Total dropped: " + String(_droppedMessageCount));
+    Serial.print("Message: ");
+    Serial.println(bufferAdd._topicMessage);
+    Serial.println("Buffer size: " + String(_MESSAGE_BUFFER_SIZE) + " | Dropped: " + String(_droppedMessageCount) + " / " + String(_totalAddedCount));
+
     return false;
   }
   return true;
@@ -702,7 +685,7 @@ bool LanceControllino::lightOperation(int port, int status)
   int digitalOutputsIndex = findElementRow(_digitalOutputs[0], _DIGITAL_OUTPUTS_SIZE, port);
   int digitalOutputAssignmentIndex = findElementColumn(_digitalOutputAssignment, _DIGITAL_OUTPUT_ASSIGNMENT_SIZE, port);
   int pinStatus = -1;
-  String message = "";
+  char message[_TOPIC_MESSAGE_LENGTH];
 
   //FIND CURRENT STATUS OF DIGITAL OUTPUT PINS
   if (digitalOutputsIndex != -1 && digitalOutputAssignmentIndex != -1) {
@@ -721,28 +704,26 @@ bool LanceControllino::lightOperation(int port, int status)
     if (pinStatus == ON) {
       if (status == ON) {
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = ON;
-        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "LIGHT", ON);
+        buildMqttStatusMessage(digitalOutputAssignmentIndex, "LIGHT", ON, message, sizeof(message));
         addToBuffer(1, message);
       }
       else {
         digitalWrite(port, LOW);
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = OFF;
-        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "LIGHT", OFF);
+        buildMqttStatusMessage(digitalOutputAssignmentIndex, "LIGHT", OFF, message, sizeof(message));
         addToBuffer(1, message);
       }
     }
     else if (pinStatus == OFF) {
       if (status == OFF) {
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = OFF;
-        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "LIGHT", OFF);
+        buildMqttStatusMessage(digitalOutputAssignmentIndex, "LIGHT", OFF, message, sizeof(message));
         addToBuffer(1, message);
-        Serial.println("no_action");
       }
       else {
-        //digitalWrite(port, HIGH);
         digitalWrite(port, HIGH);
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = ON;
-        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "LIGHT", ON);
+        buildMqttStatusMessage(digitalOutputAssignmentIndex, "LIGHT", ON, message, sizeof(message));
         addToBuffer(1, message);
       }
     } else {
@@ -767,8 +748,8 @@ bool LanceControllino::shadeOperation(int port, int status) {
   int shadeUpPortIndex = -1;
   int shadeDownPortIndex = -1;
 
-  String messageUp = "";
-  String messageDown = "";
+  char messageUp[_TOPIC_MESSAGE_LENGTH];
+  char messageDown[_TOPIC_MESSAGE_LENGTH];
 
   for(int i=0; i<_DIGITAL_OUTPUT_ASSIGNMENT_SIZE; i++) {
     if (_digitalOutputAssignment[i][2] == shadeGroup && _digitalOutputAssignment[i][1] == LSHADEUP) {shadeUpPortIndex = i;}
@@ -786,8 +767,8 @@ bool LanceControllino::shadeOperation(int port, int status) {
       _digitalOutputAssignment[shadeDownPortIndex][3] = OFF;
       _digitalOutputAssignmentClock[shadeUpPortIndex] = OFF;
       _digitalOutputAssignmentClock[shadeDownPortIndex] = OFF;
-      messageUp = buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", OFF);
-      messageDown = buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", OFF);
+      buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", OFF, messageUp, sizeof(messageUp));
+      buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", OFF, messageDown, sizeof(messageDown));
       addToBuffer(1, messageUp);
       addToBuffer(1, messageDown);
     }
@@ -800,8 +781,8 @@ bool LanceControllino::shadeOperation(int port, int status) {
       _digitalOutputAssignment[shadeDownPortIndex][3] = OFF;
       _digitalOutputAssignmentClock[shadeUpPortIndex] = OFF;
       _digitalOutputAssignmentClock[shadeDownPortIndex] = OFF;
-      messageUp = buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", OFF);
-      messageDown = buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", OFF);
+      buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", OFF, messageUp, sizeof(messageUp));
+      buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", OFF, messageDown, sizeof(messageDown));
       addToBuffer(1, messageUp);
       addToBuffer(1, messageDown);    
     }
@@ -815,8 +796,8 @@ bool LanceControllino::shadeOperation(int port, int status) {
       _digitalOutputAssignment[shadeDownPortIndex][3] = OFF;
       _digitalOutputAssignmentClock[shadeUpPortIndex] = millis();
       _digitalOutputAssignmentClock[shadeDownPortIndex] = OFF;
-      messageUp = buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", ON);
-      messageDown = buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", OFF);
+      buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", ON, messageUp, sizeof(messageUp));
+      buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", OFF, messageDown, sizeof(messageDown));
       addToBuffer(1, messageUp);
       addToBuffer(1, messageDown);
     }
@@ -829,8 +810,8 @@ bool LanceControllino::shadeOperation(int port, int status) {
       _digitalOutputAssignment[shadeUpPortIndex][3] = OFF;
       _digitalOutputAssignmentClock[shadeDownPortIndex] = millis();
       _digitalOutputAssignmentClock[shadeUpPortIndex] = OFF;
-      messageUp = buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", OFF);
-      messageDown = buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", ON);
+      buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", OFF, messageUp, sizeof(messageUp));
+      buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", ON, messageDown, sizeof(messageDown));
       addToBuffer(1, messageUp);
       addToBuffer(1, messageDown);
     }
@@ -843,8 +824,7 @@ bool LanceControllino::fanOperation(int port, int status)
   int digitalOutputsIndex = findElementRow(_digitalOutputs[0], _DIGITAL_OUTPUTS_SIZE, port);
   int digitalOutputAssignmentIndex = findElementColumn(_digitalOutputAssignment, _DIGITAL_OUTPUT_ASSIGNMENT_SIZE, port);
   int pinStatus = -1;
-
-  String message = "";
+  char message[_TOPIC_MESSAGE_LENGTH];
 
   //FIND CURRENT STATUS OF DIGITAL OUTPUT PINS
   if (digitalOutputsIndex != -1 && digitalOutputAssignmentIndex != -1) {
@@ -863,14 +843,14 @@ bool LanceControllino::fanOperation(int port, int status)
       if (status == ON) {
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = ON;
         _digitalOutputAssignmentClock[digitalOutputAssignmentIndex] = millis();
-        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "FAN", ON);
+        buildMqttStatusMessage(digitalOutputAssignmentIndex, "FAN", ON, message, sizeof(message));
         addToBuffer(1, message);
       }
       else {
         digitalWrite(port, LOW);
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = OFF;
         _digitalOutputAssignmentClock[digitalOutputAssignmentIndex] = OFF;
-        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "FAN", OFF);
+        buildMqttStatusMessage(digitalOutputAssignmentIndex, "FAN", OFF, message, sizeof(message));
         addToBuffer(1, message);
       }
     }
@@ -878,14 +858,14 @@ bool LanceControllino::fanOperation(int port, int status)
       if (status == OFF) {
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = OFF;
         _digitalOutputAssignmentClock[digitalOutputAssignmentIndex] = OFF;
-        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "FAN", OFF);
+        buildMqttStatusMessage(digitalOutputAssignmentIndex, "FAN", OFF, message, sizeof(message));
         addToBuffer(1, message);
       }
       else {
         digitalWrite(port, HIGH);
         _digitalOutputAssignment[digitalOutputAssignmentIndex][3] = ON;
         _digitalOutputAssignmentClock[digitalOutputAssignmentIndex] = millis();
-        message = buildMqttStatusMessage(digitalOutputAssignmentIndex, "FAN", ON);
+        buildMqttStatusMessage(digitalOutputAssignmentIndex, "FAN", ON, message, sizeof(message));
         addToBuffer(1, message);
       }
     } else {
@@ -908,7 +888,9 @@ void LanceControllino::statusTimeVerification() {
         digitalWrite(_digitalOutputAssignment[i][0], LOW);
         _digitalOutputAssignment[i][3] = OFF;
         _digitalOutputAssignmentClock[i] = OFF;
-        addToBuffer(1, buildMqttStatusMessage(i, _digitalOutputAssignment[i][1] == LSHADEUP ? "SHADEUP" : "SHADEDOWN", OFF));
+        char message[_TOPIC_MESSAGE_LENGTH];
+        buildMqttStatusMessage(i, _digitalOutputAssignment[i][1] == LSHADEUP ? "SHADEUP" : "SHADEDOWN", OFF, message, sizeof(message));
+        addToBuffer(1, message);
       }
     }
     else if (_digitalOutputAssignment[i][1] == LFAN) {
@@ -918,69 +900,25 @@ void LanceControllino::statusTimeVerification() {
         digitalWrite(_digitalOutputAssignment[i][0], LOW);
         _digitalOutputAssignment[i][3] = OFF;
         _digitalOutputAssignmentClock[i] = OFF;
-        addToBuffer(1, buildMqttStatusMessage(i, "FAN", OFF));
+        char message[_TOPIC_MESSAGE_LENGTH];
+        buildMqttStatusMessage(i, "FAN", OFF, message, sizeof(message));
+        addToBuffer(1, message);
       }
     }
   }
 }
 
-String LanceControllino::buildMqttStatusMessage(int outputIndex, const char *typeName, int status)
+void LanceControllino::buildMqttStatusMessage(int outputIndex, const char *typeName, int status, char *buffer, size_t bufferSize)
 {
-  String message = "TYPE=";
-  message += typeName;
-  message += ":ZONE=";
-  message += _digitalOutputZones[outputIndex];
-  message += ":INDEX=";
-  message += String(_digitalOutputZoneIndexes[outputIndex]);
-  message += ":STATUS=";
-  message += (status == ON) ? "ON" : "OFF";
-  return message;
-}
-
-int LanceControllino::findOutputIndexByIdentity(const String &type, const String &zone, int index)
-{
-  for (int i = 0; i < _DIGITAL_OUTPUT_ASSIGNMENT_SIZE; i++) {
-    if (String(_digitalOutputZones[i]) != zone || _digitalOutputZoneIndexes[i] != index) {
-      continue;
-    }
-
-    switch (_digitalOutputAssignment[i][1]) {
-      case LLIGHT:
-        if (type == "LIGHT") return i;
-        break;
-      case LFAN:
-        if (type == "FAN") return i;
-        break;
-      case LSHADEUP:
-        if (type == "SHADEUP") return i;
-        break;
-      case LSHADEDOWN:
-        if (type == "SHADEDOWN") return i;
-        break;
-    }
-  }
-
-  return -1;
-}
-
-bool LanceControllino::processExternalRequest(const String &type, const String &zone, int index, int status) {
-
-  int digitalOutputAssignmentIndex = findOutputIndexByIdentity(type, zone, index);
-
-  // Return false if port not found
-  if (digitalOutputAssignmentIndex == -1) {
-    return false;
-  }
-
-  int port = _digitalOutputAssignment[digitalOutputAssignmentIndex][0];
-
-  switch (_digitalOutputAssignment[digitalOutputAssignmentIndex][1]) {
-    case LLIGHT: {lightOperation(port, status); break;}
-    case LSHADEUP: {shadeOperation(port, status); break;}
-    case LSHADEDOWN: {shadeOperation(port, status); break;}
-    case LFAN: {fanOperation(port, status); break;}
-  }
-  return true;
+  snprintf(
+    buffer,
+    bufferSize,
+    "TYPE=%s:ZONE=%s:INDEX=%d:STATUS=%s",
+    typeName,
+    _digitalOutputZones[outputIndex],
+    _digitalOutputZoneIndexes[outputIndex],
+    status == ON ? "ON" : "OFF"
+  );
 }
 
 bool LanceControllino::processExternalRequest(int port, int status) {
@@ -1046,8 +984,12 @@ bool LanceControllino::processCoverCommand(const String &zone, int index, const 
     return false;
   }
 
-  addToBuffer(1, buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", _digitalOutputAssignment[shadeUpPortIndex][3]));
-  addToBuffer(1, buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", _digitalOutputAssignment[shadeDownPortIndex][3]));
+  char messageUp[_TOPIC_MESSAGE_LENGTH];
+  char messageDown[_TOPIC_MESSAGE_LENGTH];
+  buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", _digitalOutputAssignment[shadeUpPortIndex][3], messageUp, sizeof(messageUp));
+  buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", _digitalOutputAssignment[shadeDownPortIndex][3], messageDown, sizeof(messageDown));
+  addToBuffer(1, messageUp);
+  addToBuffer(1, messageDown);
   return true;
 }
 
@@ -1097,8 +1039,12 @@ bool LanceControllino::processCoverCommand(const char *zone, int index, const ch
     return false;
   }
 
-  addToBuffer(1, buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", _digitalOutputAssignment[shadeUpPortIndex][3]));
-  addToBuffer(1, buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", _digitalOutputAssignment[shadeDownPortIndex][3]));
+  char messageUp[_TOPIC_MESSAGE_LENGTH];
+  char messageDown[_TOPIC_MESSAGE_LENGTH];
+  buildMqttStatusMessage(shadeUpPortIndex, "SHADEUP", _digitalOutputAssignment[shadeUpPortIndex][3], messageUp, sizeof(messageUp));
+  buildMqttStatusMessage(shadeDownPortIndex, "SHADEDOWN", _digitalOutputAssignment[shadeDownPortIndex][3], messageDown, sizeof(messageDown));
+  addToBuffer(1, messageUp);
+  addToBuffer(1, messageDown);
   return true;
 }
 
@@ -1208,11 +1154,8 @@ bool LanceControllinoRuntime::handleHomeAssistantCommandTopic(const char *topic,
       continue;
     }
 
-    Serial.print("Matched command topic: ");
-    Serial.println(topic);
-
     switch (_controller.getOutputType(i)) {
-      case LLIGHT:
+      case LLIGHT:    
         if (strcmp(payload, "ON") == 0 || strcmp(payload, "OFF") == 0) {
           return _controller.processExternalRequest(_controller.getOutputPort(i), strcmp(payload, "ON") == 0 ? ON : OFF);
         }
