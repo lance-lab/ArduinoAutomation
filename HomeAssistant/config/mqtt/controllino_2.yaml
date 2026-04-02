@@ -1,0 +1,163 @@
+- light:
+    name: "Common 1"
+    unique_id: "lancecontrollino2_light_common_1"
+    state_topic: "controllino/LanceControllino2/light/light_common_1/state"
+    command_topic: "controllino/LanceControllino2/light/light_common_1/set"
+    availability_topic: "controllino/LanceControllino2/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Outside 1"
+    unique_id: "lancecontrollino2_light_outside_1"
+    state_topic: "controllino/LanceControllino2/light/light_outside_1/state"
+    command_topic: "controllino/LanceControllino2/light/light_outside_1/set"
+    availability_topic: "controllino/LanceControllino2/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Outside 2"
+    unique_id: "lancecontrollino2_light_outside_2"
+    state_topic: "controllino/LanceControllino2/light/light_outside_2/state"
+    command_topic: "controllino/LanceControllino2/light/light_outside_2/set"
+    availability_topic: "controllino/LanceControllino2/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Outside 3"
+    unique_id: "lancecontrollino2_light_outside_3"
+    state_topic: "controllino/LanceControllino2/light/light_outside_3/state"
+    command_topic: "controllino/LanceControllino2/light/light_outside_3/set"
+    availability_topic: "controllino/LanceControllino2/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Outside 4"
+    unique_id: "lancecontrollino2_light_outside_4"
+    state_topic: "controllino/LanceControllino2/light/light_outside_4/state"
+    command_topic: "controllino/LanceControllino2/light/light_outside_4/set"
+    availability_topic: "controllino/LanceControllino2/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- cover:
+    name: "Bed Room Shade 1"
+    unique_id: "lancecontrollino2_cover_bed_room_1"
+    state_topic: "controllino/LanceControllino2/cover/cover_bed_room_1/state"
+    command_topic: "controllino/LanceControllino2/cover/cover_bed_room_1/set"
+    availability_topic: "controllino/LanceControllino2/status"
+    payload_open: "OPEN"
+    payload_close: "CLOSE"
+    payload_stop: "STOP"
+    state_opening: "OPENING"
+    state_closing: "CLOSING"
+    state_stopped: "STOPPED"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- cover:
+    name: "Kid Room Shade 1"
+    unique_id: "lancecontrollino2_cover_kid_room_1"
+    state_topic: "controllino/LanceControllino2/cover/cover_kid_room_1/state"
+    command_topic: "controllino/LanceControllino2/cover/cover_kid_room_1/set"
+    availability_topic: "controllino/LanceControllino2/status"
+    payload_open: "OPEN"
+    payload_close: "CLOSE"
+    payload_stop: "STOP"
+    state_opening: "OPENING"
+    state_closing: "CLOSING"
+    state_stopped: "STOPPED"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- cover:
+    name: "Kid Room Shade 2"
+    unique_id: "lancecontrollino2_cover_kid_room_2"
+    state_topic: "controllino/LanceControllino2/cover/cover_kid_room_2/state"
+    command_topic: "controllino/LanceControllino2/cover/cover_kid_room_2/set"
+    availability_topic: "controllino/LanceControllino2/status"
+    payload_open: "OPEN"
+    payload_close: "CLOSE"
+    payload_stop: "STOP"
+    state_opening: "OPENING"
+    state_closing: "CLOSING"
+    state_stopped: "STOPPED"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- cover:
+    name: "Working Room Shade 1"
+    unique_id: "lancecontrollino2_cover_working_room_1"
+    state_topic: "controllino/LanceControllino2/cover/cover_working_room_1/state"
+    command_topic: "controllino/LanceControllino2/cover/cover_working_room_1/set"
+    availability_topic: "controllino/LanceControllino2/status"
+    payload_open: "OPEN"
+    payload_close: "CLOSE"
+    payload_stop: "STOP"
+    state_opening: "OPENING"
+    state_closing: "CLOSING"
+    state_stopped: "STOPPED"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- fan:
+    name: "Bath Room Fan 1"
+    unique_id: "lancecontrollino2_fan_bath_room_1"
+    state_topic: "controllino/LanceControllino2/fan/fan_bath_room_1/state"
+    command_topic: "controllino/LanceControllino2/fan/fan_bath_room_1/set"
+    availability_topic: "controllino/LanceControllino2/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- fan:
+    name: "Bath Room Fan 2"
+    unique_id: "lancecontrollino2_fan_bath_room_2"
+    state_topic: "controllino/LanceControllino2/fan/fan_bath_room_2/state"
+    command_topic: "controllino/LanceControllino2/fan/fan_bath_room_2/set"
+    availability_topic: "controllino/LanceControllino2/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- cover:
+    name: "Outside Shade 1"
+    unique_id: "lancecontrollino2_cover_outside_1"
+    state_topic: "controllino/LanceControllino2/cover/cover_outside_1/state"
+    command_topic: "controllino/LanceControllino2/cover/cover_outside_1/set"
+    availability_topic: "controllino/LanceControllino2/status"
+    payload_open: "OPEN"
+    payload_close: "CLOSE"
+    payload_stop: "STOP"
+    state_opening: "OPENING"
+    state_closing: "CLOSING"
+    state_stopped: "STOPPED"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false

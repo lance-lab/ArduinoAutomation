@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=lance
 WorkingDirectory=/home/lance/Repositories/ArduinoAutomation
-ExecStart=/home/lance/Repositories/ArduinoAutomation/mqtt/start-local.sh
+ExecStart=/usr/bin/bash /home/lance/Repositories/ArduinoAutomation/mqtt/start-local.sh
 Restart=always
 RestartSec=5
 

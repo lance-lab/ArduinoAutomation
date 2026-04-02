@@ -1,7 +1,7 @@
 #ifndef SET_CREDENTIALS_CONFIG_H
 #define SET_CREDENTIALS_CONFIG_H
 
-#define HOSTNAME "LanceControllino1"
+#define HOSTNAME "LanceControllino2"
 
 namespace SetCredentialsConfig {
 struct DeviceConfig {

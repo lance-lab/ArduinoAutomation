@@ -1,4 +1,4 @@
-# Home Assistant main configuration for this repo
-# Loads MQTT entities from the sibling ../mqtt/ directory.
+# Home Assistant main configuration for this repo.
+# Loads MQTT entities from files in the local mqtt/ directory.
 
-mqtt: !include controllino_1_mqtt.yaml
+mqtt: !include_dir_merge_list mqtt/
