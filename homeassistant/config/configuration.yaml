@@ -1,4 +1,0 @@
-# Home Assistant main configuration for this repo
-# Loads MQTT entities from the sibling ../mqtt/ directory.
-
-mqtt: !include_dir_merge_list ../mqtt
