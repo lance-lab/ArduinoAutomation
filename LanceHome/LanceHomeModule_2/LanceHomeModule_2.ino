@@ -1,5 +1,6 @@
 // Last update: 8/29/2022
 #include "LanceControllino.h"
+#include "ModuleConfiguration.h"
 
 #define MQTT_EVENTS true
 
@@ -61,6 +62,9 @@ LanceControllinoRuntime lanceRuntime(
 
 void setup()
 {
+  Serial.begin(SERIAL_BAUD_RATE);
+  delay(1000);
+  CredentialManager::provisionFromConfig(ModuleConfiguration::DEVICE_CONFIG);
   lanceRuntime.setup();
 }
 

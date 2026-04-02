@@ -1,13 +1,9 @@
 /*
-  CredentialManager.h - Secure credential storage in EEPROM
+  CredentialManager.h - Secure device configuration storage in EEPROM
   
-  Manages MQTT credentials securely without hardcoding in source.
-  Credentials are stored in Controllino Maxi's 4KB EEPROM.
-  
-  Usage:
-    1. Upload SetCredentials sketch to program EEPROM once
-    2. Upload main sketch that loads from EEPROM
-    3. Credentials persist across power loss and code updates
+  Manages MQTT and network configuration without hardcoding runtime values.
+  Configuration is stored in Controllino Maxi's EEPROM and can be
+  provisioned directly by each module sketch during setup.
 */
 
 #ifndef CredentialManager_h
@@ -50,6 +46,19 @@ struct Credentials {
   uint16_t mqttPort;                     // MQTT broker port
 };
 
+struct DeviceConfig {
+  const char *hostname;
+  const char *mqttUser;
+  const char *mqttPass;
+  const char *mqttServer;
+  const char *mqttClientId;
+  byte mac[6];
+  byte localIp[4];
+  byte gatewayIp[4];
+  byte subnetMask[4];
+  uint16_t mqttPort;
+};
+
 // ===== CREDENTIAL MANAGER CLASS =====
 class CredentialManager {
   public:
@@ -59,17 +68,21 @@ class CredentialManager {
       Returns: true if credentials were loaded successfully
                false if EEPROM not initialized or checksum failed
     */
-    static bool loadCredentials(Credentials &cred) {
+    static bool loadCredentials(Credentials &cred, bool verbose = true) {
       // Check if EEPROM has been initialized with valid data
       if (EEPROM.read(EEPROM_INIT_FLAG_ADDR) != EEPROM_INIT_MAGIC) {
-        Serial.println("ERROR: Credentials not initialized in EEPROM!");
-        Serial.println("SOLUTION: Upload SetCredentials.ino to program EEPROM first");
+        if (verbose) {
+          Serial.println("ERROR: Configuration not initialized in EEPROM!");
+          Serial.println("SOLUTION: Module setup will provision configuration automatically");
+        }
         return false;
       }
 
       if (EEPROM.read(EEPROM_LAYOUT_VERSION_ADDR) != EEPROM_LAYOUT_VERSION) {
-        Serial.println("ERROR: EEPROM credential layout is outdated");
-        Serial.println("SOLUTION: Upload SetCredentials.ino again to rewrite credentials");
+        if (verbose) {
+          Serial.println("ERROR: EEPROM configuration layout is outdated");
+          Serial.println("SOLUTION: Module setup will rewrite configuration automatically");
+        }
         return false;
       }
       
@@ -87,30 +100,29 @@ class CredentialManager {
 
       // Verify data looks valid (basic sanity check)
       if (strlen(cred.mqttUser) == 0 || strlen(cred.mqttPass) == 0) {
-        Serial.println("WARNING: Empty username or password in EEPROM");
+        if (verbose) {
+          Serial.println("WARNING: Empty username or password in EEPROM");
+        }
         return false;
       }
 
       if (cred.mqttPort == 0) {
-        Serial.println("WARNING: Invalid MQTT port in EEPROM");
+        if (verbose) {
+          Serial.println("WARNING: Invalid MQTT port in EEPROM");
+        }
         return false;
       }
       
-      Serial.println("✓ Credentials loaded from EEPROM");
-      Serial.println("  User: " + String(cred.mqttUser));
-      Serial.println("  Server: " + String(cred.mqttServer));
-      Serial.print("  Local IP: ");
-      printIPAddress(cred.localIp);
-      Serial.println();
+      if (verbose) {
+        Serial.println("Configuration loaded from EEPROM");
+        printConfiguredValues(cred);
+      }
       
       return true;
     }
     
     /*
-      Save credentials to EEPROM.
-      
-      Call this function once using the SetCredentials.ino sketch to 
-      program the device with your MQTT broker details.
+      Save configuration to EEPROM.
       
       Args:
         cred - Credentials struct with all fields populated
@@ -155,10 +167,44 @@ class CredentialManager {
       EEPROM.write(EEPROM_INIT_FLAG_ADDR, EEPROM_INIT_MAGIC);
       EEPROM.write(EEPROM_LAYOUT_VERSION_ADDR, EEPROM_LAYOUT_VERSION);
       
-      Serial.println("✓ Credentials programmed to EEPROM successfully!");
-      Serial.println("  You can now upload your main sketch");
+      Serial.println("Configuration programmed to EEPROM successfully");
       
       return true;
+    }
+
+    static void populateCredentials(Credentials &cred, const DeviceConfig &deviceConfig) {
+      memset(&cred, 0, sizeof(cred));
+
+      strncpy(cred.mqttUser, deviceConfig.mqttUser, CRED_USERNAME_MAX - 1);
+      strncpy(cred.mqttPass, deviceConfig.mqttPass, CRED_PASSWORD_MAX - 1);
+      strncpy(cred.mqttServer, deviceConfig.mqttServer, CRED_SERVER_MAX - 1);
+      strncpy(cred.mqttClientId, deviceConfig.mqttClientId, CRED_CLIENT_ID_MAX - 1);
+      memcpy(cred.mac, deviceConfig.mac, sizeof(cred.mac));
+      memcpy(cred.localIp, deviceConfig.localIp, sizeof(cred.localIp));
+      memcpy(cred.gatewayIp, deviceConfig.gatewayIp, sizeof(cred.gatewayIp));
+      memcpy(cred.subnetMask, deviceConfig.subnetMask, sizeof(cred.subnetMask));
+      cred.mqttPort = deviceConfig.mqttPort;
+    }
+
+    static bool provisionFromConfig(const DeviceConfig &deviceConfig, bool force = false) {
+      Credentials desired;
+      Credentials current;
+
+      populateCredentials(desired, deviceConfig);
+
+      if (!force && loadCredentials(current, false) && credentialsEqual(current, desired)) {
+        Serial.println("EEPROM configuration already matches module configuration");
+        return true;
+      }
+
+      if (force) {
+        Serial.println("Forcing EEPROM configuration rewrite from module configuration");
+      } else {
+        Serial.println("Provisioning EEPROM from module configuration");
+      }
+
+      printConfiguredValues(desired);
+      return saveCredentials(desired);
     }
     
     /*
@@ -169,7 +215,7 @@ class CredentialManager {
       for (int i = 0; i <= EEPROM_LAYOUT_VERSION_ADDR; i++) {
         EEPROM.write(i, 0xFF);  // 0xFF is the EEPROM empty value
       }
-      Serial.println("Credentials erased from EEPROM");
+      Serial.println("Configuration erased from EEPROM");
     }
     
     /*
@@ -246,6 +292,30 @@ class CredentialManager {
       EEPROM.write(addr + 1, (value >> 8) & 0xFF);
     }
 
+    static bool credentialsEqual(const Credentials &a, const Credentials &b) {
+      return strcmp(a.mqttUser, b.mqttUser) == 0 &&
+             strcmp(a.mqttPass, b.mqttPass) == 0 &&
+             strcmp(a.mqttServer, b.mqttServer) == 0 &&
+             strcmp(a.mqttClientId, b.mqttClientId) == 0 &&
+             memcmp(a.mac, b.mac, sizeof(a.mac)) == 0 &&
+             memcmp(a.localIp, b.localIp, sizeof(a.localIp)) == 0 &&
+             memcmp(a.gatewayIp, b.gatewayIp, sizeof(a.gatewayIp)) == 0 &&
+             memcmp(a.subnetMask, b.subnetMask, sizeof(a.subnetMask)) == 0 &&
+             a.mqttPort == b.mqttPort;
+    }
+
+    static void printMacAddress(const byte *mac) {
+      for (int i = 0; i < 6; i++) {
+        if (mac[i] < 16) {
+          Serial.print("0");
+        }
+        Serial.print(mac[i], HEX);
+        if (i < 5) {
+          Serial.print(":");
+        }
+      }
+    }
+
     static void printIPAddress(const byte *ip) {
       Serial.print(ip[0]);
       Serial.print(".");
@@ -254,6 +324,26 @@ class CredentialManager {
       Serial.print(ip[2]);
       Serial.print(".");
       Serial.print(ip[3]);
+    }
+
+    static void printConfiguredValues(const Credentials &cred) {
+      Serial.println("Configured values:");
+      Serial.println("  User: " + String(cred.mqttUser));
+      Serial.println("  Server: " + String(cred.mqttServer));
+      Serial.println("  Client ID: " + String(cred.mqttClientId));
+      Serial.print("  MAC: ");
+      printMacAddress(cred.mac);
+      Serial.println();
+      Serial.print("  Local IP: ");
+      printIPAddress(cred.localIp);
+      Serial.println();
+      Serial.print("  Gateway: ");
+      printIPAddress(cred.gatewayIp);
+      Serial.println();
+      Serial.print("  Subnet: ");
+      printIPAddress(cred.subnetMask);
+      Serial.println();
+      Serial.println("  MQTT Port: " + String(cred.mqttPort));
     }
 };
 
