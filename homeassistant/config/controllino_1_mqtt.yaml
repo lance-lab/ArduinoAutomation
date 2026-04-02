@@ -1,0 +1,215 @@
+- light:
+    name: "Living Room 1"
+    unique_id: "lancecontrollino1_light_living_room_1"
+    state_topic: "controllino/LanceControllino1/light/light_living_room_1/state"
+    command_topic: "controllino/LanceControllino1/light/light_living_room_1/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Living Room 2"
+    unique_id: "lancecontrollino1_light_living_room_2"
+    state_topic: "controllino/LanceControllino1/light/light_living_room_2/state"
+    command_topic: "controllino/LanceControllino1/light/light_living_room_2/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Kitchen 2"
+    unique_id: "lancecontrollino1_light_kitchen_2"
+    state_topic: "controllino/LanceControllino1/light/light_kitchen_2/state"
+    command_topic: "controllino/LanceControllino1/light/light_kitchen_2/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Bath Room 1"
+    unique_id: "lancecontrollino1_light_bath_room_1"
+    state_topic: "controllino/LanceControllino1/light/light_bath_room_1/state"
+    command_topic: "controllino/LanceControllino1/light/light_bath_room_1/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Bath Room 2"
+    unique_id: "lancecontrollino1_light_bath_room_2"
+    state_topic: "controllino/LanceControllino1/light/light_bath_room_2/state"
+    command_topic: "controllino/LanceControllino1/light/light_bath_room_2/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Kid Room 1"
+    unique_id: "lancecontrollino1_light_kid_room_1"
+    state_topic: "controllino/LanceControllino1/light/light_kid_room_1/state"
+    command_topic: "controllino/LanceControllino1/light/light_kid_room_1/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Working Room 1"
+    unique_id: "lancecontrollino1_light_working_room_1"
+    state_topic: "controllino/LanceControllino1/light/light_working_room_1/state"
+    command_topic: "controllino/LanceControllino1/light/light_working_room_1/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Common 2"
+    unique_id: "lancecontrollino1_light_common_2"
+    state_topic: "controllino/LanceControllino1/light/light_common_2/state"
+    command_topic: "controllino/LanceControllino1/light/light_common_2/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Living Room 3"
+    unique_id: "lancecontrollino1_light_living_room_3"
+    state_topic: "controllino/LanceControllino1/light/light_living_room_3/state"
+    command_topic: "controllino/LanceControllino1/light/light_living_room_3/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Maintenance Room 1"
+    unique_id: "lancecontrollino1_light_maintenance_room_1"
+    state_topic: "controllino/LanceControllino1/light/light_maintenance_room_1/state"
+    command_topic: "controllino/LanceControllino1/light/light_maintenance_room_1/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Common 3"
+    unique_id: "lancecontrollino1_light_common_3"
+    state_topic: "controllino/LanceControllino1/light/light_common_3/state"
+    command_topic: "controllino/LanceControllino1/light/light_common_3/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Kid Room 2"
+    unique_id: "lancecontrollino1_light_kid_room_2"
+    state_topic: "controllino/LanceControllino1/light/light_kid_room_2/state"
+    command_topic: "controllino/LanceControllino1/light/light_kid_room_2/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Working Room 2"
+    unique_id: "lancecontrollino1_light_working_room_2"
+    state_topic: "controllino/LanceControllino1/light/light_working_room_2/state"
+    command_topic: "controllino/LanceControllino1/light/light_working_room_2/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Bed Room 1"
+    unique_id: "lancecontrollino1_light_bed_room_1"
+    state_topic: "controllino/LanceControllino1/light/light_bed_room_1/state"
+    command_topic: "controllino/LanceControllino1/light/light_bed_room_1/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Kitchen 1"
+    unique_id: "lancecontrollino1_light_kitchen_1"
+    state_topic: "controllino/LanceControllino1/light/light_kitchen_1/state"
+    command_topic: "controllino/LanceControllino1/light/light_kitchen_1/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Common 4"
+    unique_id: "lancecontrollino1_light_common_4"
+    state_topic: "controllino/LanceControllino1/light/light_common_4/state"
+    command_topic: "controllino/LanceControllino1/light/light_common_4/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Common 5"
+    unique_id: "lancecontrollino1_light_common_5"
+    state_topic: "controllino/LanceControllino1/light/light_common_5/state"
+    command_topic: "controllino/LanceControllino1/light/light_common_5/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
+- light:
+    name: "Kitchen 3"
+    unique_id: "lancecontrollino1_light_kitchen_3"
+    state_topic: "controllino/LanceControllino1/light/light_kitchen_3/state"
+    command_topic: "controllino/LanceControllino1/light/light_kitchen_3/set"
+    availability_topic: "controllino/LanceControllino1/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
