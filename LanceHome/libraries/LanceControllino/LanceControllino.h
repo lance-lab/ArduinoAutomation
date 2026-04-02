@@ -124,10 +124,17 @@
 // populates only the used entries based on analogInputAssignment passed from the sketch.
 // Actual usage specified by ANALOG_INPUT_ASSIGNMENT_RW in the sketch (typically 29 entries).
 #define _ANALOG_INPUTS_SIZE 12
-#define _DIGITAL_OUTPUTS_SIZE 18
+#if defined(CONTROLLINO_MAXI)
+  #define _DIGITAL_OUTPUTS_SIZE 20
+#elif defined(CONTROLLINO_MAXI_AUTOMATION)
+  #define _DIGITAL_OUTPUTS_SIZE 18
+#else
+  #define _DIGITAL_OUTPUTS_SIZE 18
+#endif
+
 #define _ANALOG_INPUT_ASSIGNMENT_SIZE 48
-#define _DIGITAL_OUTPUT_ASSIGNMENT_SIZE 18
-#define _DIGITAL_OUTPUT_ASSIGNMENT_CLOCK_SIZE 18
+#define _DIGITAL_OUTPUT_ASSIGNMENT_SIZE _DIGITAL_OUTPUTS_SIZE
+#define _DIGITAL_OUTPUT_ASSIGNMENT_CLOCK_SIZE _DIGITAL_OUTPUTS_SIZE
 #define _TOPIC_MESSAGE_LENGTH 96
 #define _MESSAGE_BUFFER_SIZE 20  // RingBuf capacity - if exceeded, messages are dropped
 #define SERIAL_BAUD_RATE 115200
@@ -227,11 +234,20 @@ class LanceControllino
       {DISABLED,DISABLED,DISABLED,DISABLED,DISABLED,DISABLED,DISABLED,DISABLED,DISABLED,DISABLED,DISABLED,DISABLED}
       };
 
-    // Digital outputs array
+    // Digital outputs array.
+    // Board-specific because CONTROLLINO MAXI and MAXI Automation expose
+    // different output terminals.
     const int _digitalOutputs [3][_DIGITAL_OUTPUTS_SIZE] = {
+#if defined(CONTROLLINO_MAXI)
+    { DO00,  DO01,  DO02,  DO03,  DO04,  DO05,  DO06,  DO07,  DO08,  DO09,  RO00,  RO01,  RO02,  RO03,  RO04,  RO05,  RO06,  RO07,  RO08,  RO09},
+    {_PORTE,_PORTE,_PORTG,_PORTE,_PORTH,_PORTH,_PORTH,_PORTH, _PORTB,_PORTB,_PORTA,_PORTA,_PORTA,_PORTA,_PORTA,_PORTA,_PORTA,_PORTA,_PORTC,_PORTC},
+    { 4,     5,     5,     3,     3,     4,     5,     6,      4,     5,     0,     1,     2,     3,     4,     5,     6,     7,     7,     6}
+#else
     { DO00,  DO01,  DO02,  DO03,  DO04,  DO05,  DO06,  DO07,  RO00,  RO01,  RO02,  RO03,  RO04,  RO05,  RO06,  RO07,  RO08,  RO09},
     {_PORTE,_PORTE,_PORTG,_PORTE,_PORTH,_PORTH,_PORTH,_PORTH,_PORTA,_PORTA,_PORTA,_PORTA,_PORTA,_PORTA,_PORTA,_PORTA,_PORTC,_PORTC},
-    { 4,     5,     5,     3,     3,     4,     5,     6,     0,     1,     2,     3,     4,     5,     6,     7,     7,     6}};
+    { 4,     5,     5,     3,     3,     4,     5,     6,     0,     1,     2,     3,     4,     5,     6,     7,     7,     6}
+#endif
+    };
 
     /*_analogInputAssignment
       0 - analog pin
@@ -260,25 +276,44 @@ class LanceControllino
       3 - digital output status 0 = OFF, 1 = ON
     */
     int _digitalOutputAssignment [_DIGITAL_OUTPUT_ASSIGNMENT_SIZE][4] = {
+#if defined(CONTROLLINO_MAXI)
+    {DO00,TYPENONE,GROUPNONE,OFF},{DO01,TYPENONE,GROUPNONE,OFF},{DO02,TYPENONE,GROUPNONE,OFF},{DO03,TYPENONE,GROUPNONE,OFF},
+    {DO04,TYPENONE,GROUPNONE,OFF},{DO05,TYPENONE,GROUPNONE,OFF},{DO06,TYPENONE,GROUPNONE,OFF},{DO07,TYPENONE,GROUPNONE,OFF},
+    {DO08,TYPENONE,GROUPNONE,OFF},{DO09,TYPENONE,GROUPNONE,OFF},
+    {RO00,TYPENONE,GROUPNONE,OFF},{RO01,TYPENONE,GROUPNONE,OFF},{RO02,TYPENONE,GROUPNONE,OFF},{RO03,TYPENONE,GROUPNONE,OFF},
+    {RO04,TYPENONE,GROUPNONE,OFF},{RO05,TYPENONE,GROUPNONE,OFF},{RO06,TYPENONE,GROUPNONE,OFF},{RO07,TYPENONE,GROUPNONE,OFF},
+    {RO08,TYPENONE,GROUPNONE,OFF},{RO09,TYPENONE,GROUPNONE,OFF}
+#else
     {DO00,TYPENONE,GROUPNONE,OFF},{DO01,TYPENONE,GROUPNONE,OFF},{DO02,TYPENONE,GROUPNONE,OFF},{DO03,TYPENONE,GROUPNONE,OFF},
     {DO04,TYPENONE,GROUPNONE,OFF},{DO05,TYPENONE,GROUPNONE,OFF},{DO06,TYPENONE,GROUPNONE,OFF},{DO07,TYPENONE,GROUPNONE,OFF},
     {RO00,TYPENONE,GROUPNONE,OFF},{RO01,TYPENONE,GROUPNONE,OFF},{RO02,TYPENONE,GROUPNONE,OFF},{RO03,TYPENONE,GROUPNONE,OFF},
     {RO04,TYPENONE,GROUPNONE,OFF},{RO05,TYPENONE,GROUPNONE,OFF},{RO06,TYPENONE,GROUPNONE,OFF},{RO07,TYPENONE,GROUPNONE,OFF},
-    {RO08,TYPENONE,GROUPNONE,OFF},{RO09,TYPENONE,GROUPNONE,OFF}};
+    {RO08,TYPENONE,GROUPNONE,OFF},{RO09,TYPENONE,GROUPNONE,OFF}
+#endif
+    };
 
     const char *_digitalOutputZones[_DIGITAL_OUTPUT_ASSIGNMENT_SIZE] = {
+#if defined(CONTROLLINO_MAXI)
+      ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE,
+      ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE
+#else
       ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE,
       ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE, ZONE_NONE
+#endif
     };
     int _digitalOutputZoneIndexes[_DIGITAL_OUTPUT_ASSIGNMENT_SIZE] = {
+#if defined(CONTROLLINO_MAXI)
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+#else
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+#endif
     };
 
     /* _digitalOutputAssignmentClock
       Array extends _digitalOutputAssignment to capture millis (current time) if Fan or Shade operations are being processed.
       OFF - 0
     */
-    unsigned long _digitalOutputAssignmentClock [_DIGITAL_OUTPUT_ASSIGNMENT_CLOCK_SIZE] = {OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF,OFF};
+    unsigned long _digitalOutputAssignmentClock [_DIGITAL_OUTPUT_ASSIGNMENT_CLOCK_SIZE] = {0};
 
 
 };

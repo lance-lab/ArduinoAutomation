@@ -38,24 +38,24 @@ int analogInputAssignment[ANALOG_INPUT_ASSIGNMENT_RW][3] = {
 
 #define DIGITAL_OUTPUT_ASSIGNMENT_RW 18
 DigitalOutputConfig digitalOutputAssignment[DIGITAL_OUTPUT_ASSIGNMENT_RW] = {
-  {DO00,LLIGHT,      GROUPNONE, ZONE_LIVING_ROOM,       1}, //fixed
-  {DO01,LLIGHT,      GROUPNONE, ZONE_LIVING_ROOM,       2}, //fixed
-  {DO02,LLIGHT,      GROUPNONE, ZONE_KITCHEN,           2}, //fixed
-  {DO03,LLIGHT,      GROUPNONE, ZONE_BATH_ROOM,         1}, //fixed
-  {DO04,LLIGHT,      GROUPNONE, ZONE_BATH_ROOM,         2}, //fixed
-  {DO05,LLIGHT,      GROUPNONE, ZONE_KID_ROOM,          1}, //fixed
-  {DO06,LLIGHT,      GROUPNONE, ZONE_WORKING_ROOM,      1}, //fixed
-  {DO07,LLIGHT,      GROUPNONE, ZONE_COMMON,            2}, //fixed
-  {RO00,LLIGHT,      GROUPNONE, ZONE_LIVING_ROOM,       3}, //fixed
-  {RO01,LLIGHT,      GROUPNONE, ZONE_COMMON,            3}, //fixed
-  {RO02,LLIGHT,      GROUPNONE, ZONE_MAINTENANCE_ROOM,  1}, //fixed
-  {RO03,LLIGHT,      GROUPNONE, ZONE_KID_ROOM,          2}, //fixed
-  {RO04,LLIGHT,      GROUPNONE, ZONE_WORKING_ROOM,      2}, //fixed
-  {RO05,LLIGHT,      GROUPNONE, ZONE_BED_ROOM,          1}, //fixed 
-  {RO06,LLIGHT,      GROUPNONE, ZONE_KITCHEN,           1}, //fixed
-  {RO07,LLIGHT,      GROUPNONE, ZONE_COMMON,            4}, //fixed
-  {RO08,LLIGHT,      GROUPNONE, ZONE_COMMON,            5}, //fixed
-  {RO09,LLIGHT,      GROUPNONE, ZONE_KITCHEN,           3}  //fixed
+  {DO00,LLIGHT,      GROUPNONE, ZONE_LIVING_ROOM,       1}, 
+  {DO01,LLIGHT,      GROUPNONE, ZONE_LIVING_ROOM,       2},
+  {DO02,LLIGHT,      GROUPNONE, ZONE_KITCHEN,           2},
+  {DO03,LLIGHT,      GROUPNONE, ZONE_BATH_ROOM,         1},
+  {DO04,LLIGHT,      GROUPNONE, ZONE_BATH_ROOM,         2},
+  {DO05,LLIGHT,      GROUPNONE, ZONE_KID_ROOM,          1},
+  {DO06,LLIGHT,      GROUPNONE, ZONE_WORKING_ROOM,      1},
+  {DO07,LLIGHT,      GROUPNONE, ZONE_COMMON,            2},
+  {RO00,LLIGHT,      GROUPNONE, ZONE_LIVING_ROOM,       3},
+  {RO01,LLIGHT,      GROUPNONE, ZONE_COMMON,            3},
+  {RO02,LLIGHT,      GROUPNONE, ZONE_MAINTENANCE_ROOM,  1},
+  {RO03,LLIGHT,      GROUPNONE, ZONE_KID_ROOM,          2},
+  {RO04,LLIGHT,      GROUPNONE, ZONE_WORKING_ROOM,      2},
+  {RO05,LLIGHT,      GROUPNONE, ZONE_BED_ROOM,          1},
+  {RO06,LLIGHT,      GROUPNONE, ZONE_KITCHEN,           1},
+  {RO07,LLIGHT,      GROUPNONE, ZONE_COMMON,            4},
+  {RO08,LLIGHT,      GROUPNONE, ZONE_COMMON,            5},
+  {RO09,LLIGHT,      GROUPNONE, ZONE_KITCHEN,           3}
 };
 
 LanceControllino lanceControllino(
