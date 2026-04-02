@@ -19,17 +19,14 @@ From the repository root:
 
 The broker listens on all interfaces on port `1883`.
 
-## Update the Arduino EEPROM credentials
+## Update the Arduino EEPROM configuration
 
-Edit `LanceHome/SetCredentials/SetCredentials.ino`:
+Edit the module-specific configuration header:
 
-```cpp
-strncpy(cred.mqttUser, "lancehome", CRED_USERNAME_MAX - 1);
-strncpy(cred.mqttPass, "611632787d524d3f154f88e1", CRED_PASSWORD_MAX - 1);
-strncpy(cred.mqttServer, "YOUR_PC_LAN_IP", CRED_SERVER_MAX - 1);
-strncpy(cred.mqttClientId, "LanceModule1", CRED_CLIENT_ID_MAX - 1);
-```
+- `LanceHome/LanceHomeModule_1/ModuleConfiguration.h`
+- `LanceHome/LanceHomeModule_2/ModuleConfiguration.h`
 
+Each module provisions its EEPROM from that header during startup.
 Use the LAN IP of the computer running Mosquitto, not `127.0.0.1`.
 
 ## Quick test

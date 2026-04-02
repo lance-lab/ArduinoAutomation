@@ -172,7 +172,7 @@ bool LanceControllinoRuntime::loadCredentialsFromEEPROM()
 {
   if (!CredentialManager::loadCredentials(_credentials)) {
     Serial.println("\nFATAL ERROR: Cannot load device configuration from EEPROM!");
-    Serial.println("Please upload SetCredentials.ino first to program your device details");
+    Serial.println("Please verify the module configuration and reprovision EEPROM");
     return false;
   }
 
