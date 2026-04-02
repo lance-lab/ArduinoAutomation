@@ -1,0 +1,15 @@
+[Unit]
+Description=ArduinoAutomation Local Mosquitto Broker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lance
+WorkingDirectory=/home/lance/Repositories/ArduinoAutomation
+ExecStart=/usr/bin/bash /home/lance/Repositories/ArduinoAutomation/mqtt/start-local.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
