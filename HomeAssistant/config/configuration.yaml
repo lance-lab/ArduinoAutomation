@@ -2,3 +2,4 @@
 # Loads MQTT entities from files in the local mqtt/ directory.
 
 mqtt: !include_dir_merge_list mqtt/
+automation: !include automations.yaml

@@ -166,11 +166,11 @@ The subtraction method works because unsigned overflow is well-defined in C++.
 
 struct DigitalOutputConfig
 {
-  int port;
-  int type;
-  int group;
-  const char *zone;
-  int index;
+  int port;          // Physical Controllino output terminal
+  int type;          // LLIGHT, LFAN, LSHADEUP, or LSHADEDOWN
+  int group;         // Optional logical pairing/grouping for multi-relay devices
+  const char *zone;  // Home Assistant zone/room identifier
+  int index;         // 1-based entity index within the zone
 };
 
 class LanceControllino
@@ -338,6 +338,7 @@ class LanceControllinoRuntime
     static const unsigned int _maxTopicLength = 64;
     static const unsigned int _maxMQTTPacketSize = 256;
 #endif
+    // Cooperative scheduler intervals for the main loop.
     static const unsigned long _statusInterval = 200;
     static const unsigned long _analogInputInterval = 40;
     static const unsigned long _mqttReconnectInterval = 5000;

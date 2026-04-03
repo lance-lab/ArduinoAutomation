@@ -2,85 +2,38 @@
 #include "LanceControllino.h"
 #include "ModuleConfiguration.h"
 
-#define MQTT_EVENTS true
-
-#define ANALOG_INPUT_ASSIGNMENT_RW 29
-int analogInputAssignment[ANALOG_INPUT_ASSIGNMENT_RW][3] = {
-  {AI00,BTN0,DO07},
-  {AI00,BTN1,RO08},
-  {AI01,BTN0,RO04},
-  {AI01,BTN1,DO06},
-  {AI01,BTN2,DO07},
-  {AI01,BTN3,RO07},
-  {AI02,BTN0,RO03},
-  {AI02,BTN1,DO05},
-  {AI02,BTN2,RO01},
-  {AI02,BTN3,RO07},
-  {AI04,BTN0,RO07},
-  {AI04,BTN1,RO05},
-  {AI04,BTN2,RO01},
-  {AI05,BTN1,DO03},
-  {AI05,BTN2,DO07},
-  {AI05,BTN3,RO02},
-  {AI06,BTN0,DO07},
-  {AI06,BTN1,RO09},
-  {AI06,BTN2,DO02},
-  {AI06,BTN3,RO01},
-  {AI08,BTN0,DO04},
-  {AI08,BTN1,DO07},
-  {AI08,BTN2,RO06},
-  {AI08,BTN3,DO02},
-  {AI09,BTN0,RO09},
-  {AI09,BTN1,RO00},
-  {AI09,BTN2,DO00},
-  {AI09,BTN3,DO01},
-  {AI10,BTN1,RO02}
-};
-
-#define DIGITAL_OUTPUT_ASSIGNMENT_RW 18
-DigitalOutputConfig digitalOutputAssignment[DIGITAL_OUTPUT_ASSIGNMENT_RW] = {
-  {DO00,LLIGHT,      GROUPNONE, ZONE_LIVING_ROOM,       1}, 
-  {DO01,LLIGHT,      GROUPNONE, ZONE_LIVING_ROOM,       2},
-  {DO02,LLIGHT,      GROUPNONE, ZONE_KITCHEN,           2},
-  {DO03,LLIGHT,      GROUPNONE, ZONE_BATH_ROOM,         1},
-  {DO04,LLIGHT,      GROUPNONE, ZONE_BATH_ROOM,         2},
-  {DO05,LLIGHT,      GROUPNONE, ZONE_KID_ROOM,          1},
-  {DO06,LLIGHT,      GROUPNONE, ZONE_WORKING_ROOM,      1},
-  {DO07,LLIGHT,      GROUPNONE, ZONE_COMMON,            2},
-  {RO00,LLIGHT,      GROUPNONE, ZONE_LIVING_ROOM,       3},
-  {RO01,LLIGHT,      GROUPNONE, ZONE_COMMON,            3},
-  {RO02,LLIGHT,      GROUPNONE, ZONE_MAINTENANCE_ROOM,  1},
-  {RO03,LLIGHT,      GROUPNONE, ZONE_KID_ROOM,          2},
-  {RO04,LLIGHT,      GROUPNONE, ZONE_WORKING_ROOM,      2},
-  {RO05,LLIGHT,      GROUPNONE, ZONE_BED_ROOM,          1},
-  {RO06,LLIGHT,      GROUPNONE, ZONE_KITCHEN,           1},
-  {RO07,LLIGHT,      GROUPNONE, ZONE_COMMON,            4},
-  {RO08,LLIGHT,      GROUPNONE, ZONE_COMMON,            5},
-  {RO09,LLIGHT,      GROUPNONE, ZONE_KITCHEN,           3}
-};
+// EEPROM provisioning mode:
+// false = normal runtime startup
+// true  = write DEVICE_CONFIG to EEPROM on boot, skip runtime, then switch back to false and upload again
+#define PROVISION_EEPROM_ON_BOOT false
 
 LanceControllino lanceControllino(
-  analogInputAssignment,
-  digitalOutputAssignment,
-  ANALOG_INPUT_ASSIGNMENT_RW,
-  DIGITAL_OUTPUT_ASSIGNMENT_RW,
-  MQTT_EVENTS
+  ModuleConfiguration::ANALOG_INPUT_ASSIGNMENT,
+  ModuleConfiguration::DIGITAL_OUTPUT_ASSIGNMENT,
+  ModuleConfiguration::ANALOG_INPUT_ASSIGNMENT_RW,
+  ModuleConfiguration::DIGITAL_OUTPUT_ASSIGNMENT_RW,
+  ModuleConfiguration::DEVICE_CONFIG.mqttEvents
 );
 
 LanceControllinoRuntime lanceRuntime(
   lanceControllino,
-  MQTT_EVENTS
+  ModuleConfiguration::DEVICE_CONFIG.mqttEvents
 );
 
 void setup()
 {
   Serial.begin(SERIAL_BAUD_RATE);
   delay(1000);
+#if PROVISION_EEPROM_ON_BOOT
   CredentialManager::provisionFromConfig(ModuleConfiguration::DEVICE_CONFIG);
+#else
   lanceRuntime.setup();
+#endif
 }
 
 void loop()
 {
+#if !PROVISION_EEPROM_ON_BOOT
   lanceRuntime.loop();
+#endif
 }

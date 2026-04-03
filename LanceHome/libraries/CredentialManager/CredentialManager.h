@@ -30,6 +30,7 @@
 #define EEPROM_SUBNET_MASK_ADDR    (EEPROM_GATEWAY_IP_ADDR + 4)
 #define EEPROM_MQTT_PORT_ADDR      (EEPROM_SUBNET_MASK_ADDR + 4)
 #define EEPROM_INIT_FLAG_ADDR      (EEPROM_MQTT_PORT_ADDR + 2)
+// Reserved for future integrity validation if checksum support is added later.
 #define EEPROM_CHECKSUM_ADDR       (EEPROM_INIT_FLAG_ADDR + 1)
 #define EEPROM_LAYOUT_VERSION_ADDR (EEPROM_CHECKSUM_ADDR + 2)
 
@@ -46,17 +47,26 @@ struct Credentials {
   uint16_t mqttPort;                     // MQTT broker port
 };
 
+struct MqttConfig {
+  const char *mqttUser;       // MQTT broker username
+  const char *mqttPass;       // MQTT broker password
+  const char *mqttServer;     // MQTT broker IP or host string
+  const char *mqttClientId;   // Unique client identifier per device
+  uint16_t mqttPort;          // MQTT broker port
+};
+
+struct EthernetConfig {
+  byte mac[6];                // Device MAC address
+  byte localIp[4];            // Static device IP
+  byte gatewayIp[4];          // Network gateway IP
+  byte subnetMask[4];         // Network subnet mask
+};
+
 struct DeviceConfig {
-  const char *hostname;
-  const char *mqttUser;
-  const char *mqttPass;
-  const char *mqttServer;
-  const char *mqttClientId;
-  byte mac[6];
-  byte localIp[4];
-  byte gatewayIp[4];
-  byte subnetMask[4];
-  uint16_t mqttPort;
+  const char *hostname;       // Friendly name used for logs and identity
+  bool mqttEvents;            // false = offline mode, skip EEPROM/network/MQTT usage
+  MqttConfig mqtt;            // MQTT settings used when mqttEvents is true
+  EthernetConfig ethernet;    // Ethernet settings used when mqttEvents is true
 };
 
 // ===== CREDENTIAL MANAGER CLASS =====
@@ -175,23 +185,31 @@ class CredentialManager {
     static void populateCredentials(Credentials &cred, const DeviceConfig &deviceConfig) {
       memset(&cred, 0, sizeof(cred));
 
-      strncpy(cred.mqttUser, deviceConfig.mqttUser, CRED_USERNAME_MAX - 1);
-      strncpy(cred.mqttPass, deviceConfig.mqttPass, CRED_PASSWORD_MAX - 1);
-      strncpy(cred.mqttServer, deviceConfig.mqttServer, CRED_SERVER_MAX - 1);
-      strncpy(cred.mqttClientId, deviceConfig.mqttClientId, CRED_CLIENT_ID_MAX - 1);
-      memcpy(cred.mac, deviceConfig.mac, sizeof(cred.mac));
-      memcpy(cred.localIp, deviceConfig.localIp, sizeof(cred.localIp));
-      memcpy(cred.gatewayIp, deviceConfig.gatewayIp, sizeof(cred.gatewayIp));
-      memcpy(cred.subnetMask, deviceConfig.subnetMask, sizeof(cred.subnetMask));
-      cred.mqttPort = deviceConfig.mqttPort;
+      // Empty offline-only configs are allowed, so callers should skip this path unless
+      // MQTT/network support is enabled for the module.
+      strncpy(cred.mqttUser, deviceConfig.mqtt.mqttUser, CRED_USERNAME_MAX - 1);
+      strncpy(cred.mqttPass, deviceConfig.mqtt.mqttPass, CRED_PASSWORD_MAX - 1);
+      strncpy(cred.mqttServer, deviceConfig.mqtt.mqttServer, CRED_SERVER_MAX - 1);
+      strncpy(cred.mqttClientId, deviceConfig.mqtt.mqttClientId, CRED_CLIENT_ID_MAX - 1);
+      memcpy(cred.mac, deviceConfig.ethernet.mac, sizeof(cred.mac));
+      memcpy(cred.localIp, deviceConfig.ethernet.localIp, sizeof(cred.localIp));
+      memcpy(cred.gatewayIp, deviceConfig.ethernet.gatewayIp, sizeof(cred.gatewayIp));
+      memcpy(cred.subnetMask, deviceConfig.ethernet.subnetMask, sizeof(cred.subnetMask));
+      cred.mqttPort = deviceConfig.mqtt.mqttPort;
     }
 
     static bool provisionFromConfig(const DeviceConfig &deviceConfig, bool force = false) {
       Credentials desired;
       Credentials current;
 
+      if (!deviceConfig.mqttEvents) {
+        Serial.println("Skipping EEPROM provisioning because MQTT/network mode is disabled");
+        return true;
+      }
+
       populateCredentials(desired, deviceConfig);
 
+      // Avoid unnecessary EEPROM writes if the stored values already match.
       if (!force && loadCredentials(current, false) && credentialsEqual(current, desired)) {
         Serial.println("EEPROM configuration already matches module configuration");
         return true;
@@ -265,7 +283,7 @@ class CredentialManager {
         EEPROM.write(addr + i, src[i]);
         i++;
       }
-      // Always write null terminator
+      // Always write a terminator so shorter replacements do not bleed into reads.
       EEPROM.write(addr + i, '\0');
     }
 
@@ -293,6 +311,7 @@ class CredentialManager {
     }
 
     static bool credentialsEqual(const Credentials &a, const Credentials &b) {
+      // Used by provisioning to detect whether EEPROM actually needs to be rewritten.
       return strcmp(a.mqttUser, b.mqttUser) == 0 &&
              strcmp(a.mqttPass, b.mqttPass) == 0 &&
              strcmp(a.mqttServer, b.mqttServer) == 0 &&
