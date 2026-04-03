@@ -177,6 +177,8 @@ bool LanceControllinoRuntime::loadCredentialsFromEEPROM()
   }
 
   memcpy(_mac, _credentials.mac, sizeof(_mac));
+  // Keep pointers aimed at the cached credential struct so runtime does not need
+  // to duplicate MQTT strings into additional buffers.
   _localIp = IPAddress(_credentials.localIp[0], _credentials.localIp[1], _credentials.localIp[2], _credentials.localIp[3]);
   _gatewayIp = IPAddress(_credentials.gatewayIp[0], _credentials.gatewayIp[1], _credentials.gatewayIp[2], _credentials.gatewayIp[3]);
   _subnetMask = IPAddress(_credentials.subnetMask[0], _credentials.subnetMask[1], _credentials.subnetMask[2], _credentials.subnetMask[3]);
@@ -199,6 +201,7 @@ void LanceControllinoRuntime::configureMqttTopics(const char *topicBaseName)
   const char *baseName = topicBaseName;
 
   if (baseName == NULL || baseName[0] == '\0') {
+    // Leave topics empty until credentials are loaded and a client ID is known.
     _mqttAvailabilityTopic[0] = '\0';
     _mqttCommandSubscribeTopic[0] = '\0';
     return;
@@ -233,6 +236,7 @@ void LanceControllinoRuntime::setup()
     return;
   }
 
+  // Online mode requires valid provisioned settings in EEPROM.
   if (!loadCredentialsFromEEPROM()) {
     while (1) {
       digitalWrite(LED_BUILTIN, HIGH);
@@ -313,6 +317,8 @@ void LanceControllinoRuntime::publishFromBuffer()
   }
 
   if (_controller.pullFromBuffer()) {
+    // The low-level controller emits internal status messages; this layer converts
+    // them into Home Assistant-friendly retained state topics.
     String bufferedMessage = String(_controller.bufferPull._topicMessage);
 
     publishHomeAssistantStateFromMessage(bufferedMessage);
@@ -364,6 +370,8 @@ void LanceControllinoRuntime::loop()
 {
   _currentTime = millis();
 
+  // The runtime uses a simple cooperative scheduler rather than blocking delays so
+  // button scanning, MQTT maintenance, and status publishing can all share the loop.
   if ((_currentTime - _previousStatusTime) >= _statusInterval) {
     _previousStatusTime = _currentTime;
     if (_mqttEvents) {
@@ -400,7 +408,9 @@ void LanceControllinoRuntime::loop()
 bool LanceControllino::initialization(int analogAssignment[][3], DigitalOutputConfig digitalAssignment[], int analogAssignmentSize, int digitalAssignmentSize) 
 {
   /*
-  Map input arrays to global arrays
+  Map the module-specific configuration arrays into the library's fixed internal
+  lookup tables. This validates that every configured analog mapping references
+  a known analog input and a known digital output.
   */
   for (int i=0; i<analogAssignmentSize;i++) {
     int indexAnalogInputs = -1;
@@ -1128,6 +1138,8 @@ bool LanceControllinoRuntime::publishHomeAssistantStateFromMessage(const String 
       continue;
     }
 
+    // Shades are represented by a single Home Assistant cover entity even though
+    // the hardware uses separate UP and DOWN relay outputs.
     if ((type == "LIGHT" && _controller.getOutputType(i) == LLIGHT) ||
         (type == "FAN" && _controller.getOutputType(i) == LFAN) ||
         ((type == "SHADEUP" || type == "SHADEDOWN") && _controller.getOutputType(i) == LSHADEUP)) {
@@ -1166,6 +1178,7 @@ bool LanceControllinoRuntime::handleHomeAssistantCommandTopic(const char *topic,
         }
         return false;
       case LSHADEUP:
+        // Only the primary shade output owns the Home Assistant command topic.
         return _controller.processCoverCommand(_controller.getOutputZone(i), _controller.getOutputZoneIndex(i), payload);
     }
   }

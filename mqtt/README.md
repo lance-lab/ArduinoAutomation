@@ -19,6 +19,14 @@ From the repository root:
 
 The broker listens on all interfaces on port `1883`.
 
+Persistent broker data is stored outside the repository at:
+
+```bash
+~/.local/state/arduinoautomation-mqtt/
+```
+
+This keeps generated Mosquitto state, including `mosquitto.db`, out of git-tracked project files.
+
 ## Update the Arduino EEPROM configuration
 
 Edit the module-specific configuration header:

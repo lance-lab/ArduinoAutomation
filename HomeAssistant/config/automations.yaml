@@ -1,0 +1,22 @@
+- id: wife_arrives_home_at_night_turn_on_entry_lights
+  alias: Wife Arrives Home At Night
+  description: Turn on selected Controllino lights when your wife arrives home after sunset.
+  mode: single
+  trigger:
+    - platform: state
+      # Replace this with your actual Home Assistant presence entity.
+      # Examples:
+      # - person.wife
+      # - device_tracker.iphone_of_wife
+      entity_id: person.wife
+      to: "home"
+  condition:
+    - condition: state
+      entity_id: sun.sun
+      state: "below_horizon"
+  action:
+    - service: light.turn_on
+      target:
+        entity_id:
+          - light.common_1
+          - light.common_2
