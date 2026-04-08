@@ -58,6 +58,18 @@
     payload_not_available: "offline"
     optimistic: false
 
+- light:
+    name: "Outside 5"
+    unique_id: "lancecontrollino2_light_outside_5"
+    state_topic: "controllino/LanceControllino2/light/light_outside_5/state"
+    command_topic: "controllino/LanceControllino2/light/light_outside_5/set"
+    availability_topic: "controllino/LanceControllino2/status"
+    payload_on: "ON"
+    payload_off: "OFF"
+    payload_available: "online"
+    payload_not_available: "offline"
+    optimistic: false
+
 - cover:
     name: "Bed Room Shade 1"
     unique_id: "lancecontrollino2_cover_bed_room_1"
