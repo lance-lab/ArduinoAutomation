@@ -8,7 +8,7 @@
 namespace ModuleConfiguration {
   // Analog button mapping entries are:
   // { analog input pin, button on that analog input, output port to control }
-  static const int ANALOG_INPUT_ASSIGNMENT_RW = 18;
+  static const int ANALOG_INPUT_ASSIGNMENT_RW = 19;
   static int ANALOG_INPUT_ASSIGNMENT[ANALOG_INPUT_ASSIGNMENT_RW][3] = {
     {AI00,BTN0,DO06},
     {AI00,BTN2,DO05},
@@ -27,12 +27,13 @@ namespace ModuleConfiguration {
     {AI06,BTN0,RO09},
     {AI06,BTN1,RO08},
     {AI06,BTN2,DO07},
-    {AI06,BTN3,DO08}
+    {AI06,BTN3,DO08},
+    {AI07,BTN0,DO09}
   };
 
   // Digital output entries are:
   // { output port, output type, group id, Home Assistant zone name, zone index }
-  static const int DIGITAL_OUTPUT_ASSIGNMENT_RW = 17;
+  static const int DIGITAL_OUTPUT_ASSIGNMENT_RW = 18;
   static DigitalOutputConfig DIGITAL_OUTPUT_ASSIGNMENT[DIGITAL_OUTPUT_ASSIGNMENT_RW] = {
     {DO06,LLIGHT,      GROUPNONE, ZONE_COMMON,            1},
     {DO05,LLIGHT,      GROUPNONE, ZONE_OUTSIDE,           1},
@@ -50,7 +51,8 @@ namespace ModuleConfiguration {
     {RO08,LFAN,        GROUPNONE, ZONE_BATH_ROOM,         1},
     {RO09,LFAN,        GROUPNONE, ZONE_BATH_ROOM,         2},
     {DO07,LSHADEUP,    GROUP105,  ZONE_OUTSIDE,           1},
-    {DO08,LSHADEDOWN,  GROUP105,  ZONE_OUTSIDE,           1}
+    {DO08,LSHADEDOWN,  GROUP105,  ZONE_OUTSIDE,           1},
+    {DO09,LLIGHT,      GROUPNONE, ZONE_OUTSIDE,           5}
   };
 
   // Device setup:

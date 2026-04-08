@@ -8,28 +8,27 @@
 namespace ModuleConfiguration {
   // Analog button mapping entries are:
   // { analog input pin, button on that analog input, output port to control }
-  static const int ANALOG_INPUT_ASSIGNMENT_RW = 29;
+  static const int ANALOG_INPUT_ASSIGNMENT_RW = 28;
   static int ANALOG_INPUT_ASSIGNMENT[ANALOG_INPUT_ASSIGNMENT_RW][3] = {
     {AI00,BTN0,DO07},
-    {AI00,BTN1,RO08},
     {AI01,BTN0,RO04},
     {AI01,BTN1,DO06},
     {AI01,BTN2,DO07},
     {AI01,BTN3,RO07},
     {AI02,BTN0,RO03},
     {AI02,BTN1,DO05},
-    {AI02,BTN2,RO01},
+    {AI02,BTN2,RO08},
     {AI02,BTN3,RO07},
     {AI04,BTN0,RO07},
     {AI04,BTN1,RO05},
-    {AI04,BTN2,RO01},
+    {AI04,BTN2,RO08},
     {AI05,BTN1,DO03},
     {AI05,BTN2,DO07},
     {AI05,BTN3,RO02},
     {AI06,BTN0,DO07},
     {AI06,BTN1,RO09},
     {AI06,BTN2,DO02},
-    {AI06,BTN3,RO01},
+    {AI06,BTN3,RO08},
     {AI08,BTN0,DO04},
     {AI08,BTN1,DO07},
     {AI08,BTN2,RO06},
@@ -43,7 +42,7 @@ namespace ModuleConfiguration {
 
   // Digital output entries are:
   // { output port, output type, group id, Home Assistant zone name, zone index }
-  static const int DIGITAL_OUTPUT_ASSIGNMENT_RW = 18;
+  static const int DIGITAL_OUTPUT_ASSIGNMENT_RW = 17;
   static DigitalOutputConfig DIGITAL_OUTPUT_ASSIGNMENT[DIGITAL_OUTPUT_ASSIGNMENT_RW] = {
     {DO00,LLIGHT,      GROUPNONE, ZONE_LIVING_ROOM,       1},
     {DO01,LLIGHT,      GROUPNONE, ZONE_LIVING_ROOM,       2},
@@ -54,14 +53,13 @@ namespace ModuleConfiguration {
     {DO06,LLIGHT,      GROUPNONE, ZONE_WORKING_ROOM,      1},
     {DO07,LLIGHT,      GROUPNONE, ZONE_COMMON,            2},
     {RO00,LLIGHT,      GROUPNONE, ZONE_LIVING_ROOM,       3},
-    {RO01,LLIGHT,      GROUPNONE, ZONE_COMMON,            3},
     {RO02,LLIGHT,      GROUPNONE, ZONE_MAINTENANCE_ROOM,  1},
     {RO03,LLIGHT,      GROUPNONE, ZONE_KID_ROOM,          2},
     {RO04,LLIGHT,      GROUPNONE, ZONE_WORKING_ROOM,      2},
     {RO05,LLIGHT,      GROUPNONE, ZONE_BED_ROOM,          1},
     {RO06,LLIGHT,      GROUPNONE, ZONE_KITCHEN,           1},
-    {RO07,LLIGHT,      GROUPNONE, ZONE_COMMON,            4},
-    {RO08,LLIGHT,      GROUPNONE, ZONE_COMMON,            5},
+    {RO07,LLIGHT,      GROUPNONE, ZONE_COMMON,            3},
+    {RO08,LLIGHT,      GROUPNONE, ZONE_COMMON,            4},
     {RO09,LLIGHT,      GROUPNONE, ZONE_KITCHEN,           3}
   };
 
