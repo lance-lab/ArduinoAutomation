@@ -1,0 +1,6 @@
+{
+  "arduino.useArduinoCli": true,
+  "arduino.path": "/home/lance",
+  "arduino.commandPath": ".local/bin/arduino-cli",
+  "arduino.additionalUrls": []
+}

@@ -1,0 +1,7 @@
+{
+    "sketch": "LanceHome/LanceHomeModule_2/LanceHomeModule_2.ino",
+    "board": "CONTROLLINO_Boards:avr:controllino_maxi",
+    "port": "/dev/ttyACM0",
+    "output": "/tmp/arduinoautomation-build",
+    "intelliSenseGen": "enable"
+}

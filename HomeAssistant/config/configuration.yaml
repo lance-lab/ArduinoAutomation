@@ -1,5 +1,12 @@
 # Home Assistant main configuration for this repo.
 # Loads MQTT entities from files in the local mqtt/ directory.
 
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    # Narrow this to your actual Docker network CIDR if you know it.
+    # This covers the common private Docker bridge range.
+    - 172.16.0.0/12
+
 mqtt: !include_dir_merge_list mqtt/
 automation: !include automations.yaml

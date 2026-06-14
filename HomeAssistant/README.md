@@ -1,233 +1,163 @@
-# Home Assistant Setup Guide
+# Home Assistant Stack
 
-This guide explains how to connect Home Assistant to the Controllino modules in this repository using MQTT.
+This folder runs three Docker containers:
 
-Project files used by Home Assistant:
-- [configuration.yaml](/home/lance/Repositories/ArduinoAutomation/HomeAssistant/config/configuration.yaml)
-- [automations.yaml](/home/lance/Repositories/ArduinoAutomation/HomeAssistant/config/automations.yaml)
-- [controllino_1.yaml](/home/lance/Repositories/ArduinoAutomation/HomeAssistant/config/mqtt/controllino_1.yaml)
-- [controllino_2.yaml](/home/lance/Repositories/ArduinoAutomation/HomeAssistant/config/mqtt/controllino_2.yaml)
+- Home Assistant
+- Mosquitto
+- Cloudflare tunnel
 
-## 1. Install Home Assistant
+## 1. Prepare Folders
 
-Install Home Assistant using your preferred method:
-- Home Assistant OS
-- Home Assistant Container
-- Home Assistant Supervised
-- Home Assistant Core
+From this folder:
 
-Official installation docs:
-- https://www.home-assistant.io/installation/
+```bash
+cd /home/lance/Repositories/ArduinoAutomation/HomeAssistant
+```
 
-## 2. Install and configure an MQTT broker
+Create the runtime folders:
 
-This project expects Home Assistant and the Controllino modules to communicate through MQTT.
+```bash
+sudo mkdir -p /opt/homeassistant
+sudo mkdir -p /opt/mosquitto/config /opt/mosquitto/data /opt/mosquitto/log
+```
 
-Common option:
-- Mosquitto broker
+Copy the Home Assistant config:
 
-If you use Home Assistant Add-ons:
-1. Install the `Mosquitto broker` add-on
-2. Start it
-3. Create or reuse MQTT credentials
+```bash
+sudo cp -r config/* /opt/homeassistant/
+```
 
-You will need:
-- broker IP address
-- MQTT username
-- MQTT password
-- port, usually `1883`
+Copy the Mosquitto config:
 
-These values must match the module settings in:
-- [ModuleConfiguration.h](/home/lance/Repositories/ArduinoAutomation/LanceHome/LanceHomeModule_1/ModuleConfiguration.h)
-- [ModuleConfiguration.h](/home/lance/Repositories/ArduinoAutomation/LanceHome/LanceHomeModule_2/ModuleConfiguration.h)
+```bash
+sudo cp -r mosquitto/config/* /opt/mosquitto/config/
+```
 
-## 3. Add MQTT integration in Home Assistant
+To generate or update the Mosquitto password file with Docker:
 
-In Home Assistant:
-1. Open `Settings > Devices & Services`
-2. Click `Add Integration`
-3. Search for `MQTT`
-4. Enter your broker connection details
+```bash
+cd /home/lance/Repositories/ArduinoAutomation/HomeAssistant/mosquitto/config
+docker run --rm -it \
+  -v "$PWD":/mosquitto/config \
+  eclipse-mosquitto:2 \
+  mosquitto_passwd /mosquitto/config/password.txt lancehome
+```
 
-Make sure Home Assistant can connect successfully before continuing.
+To create a brand-new password file instead, add `-c`:
 
-## 4. Copy the Home Assistant config files
+```bash
+docker run --rm -it \
+  -v "$PWD":/mosquitto/config \
+  eclipse-mosquitto:2 \
+  mosquitto_passwd -c /mosquitto/config/password.txt lancehome
+```
 
-Copy this repo's Home Assistant files into your Home Assistant config directory.
+After changing `password.txt`, copy it again:
 
-Required files:
-- `HomeAssistant/config/configuration.yaml`
-- `HomeAssistant/config/automations.yaml`
-- `HomeAssistant/config/mqtt/controllino_1.yaml`
-- `HomeAssistant/config/mqtt/controllino_2.yaml`
+```bash
+sudo cp password.txt /opt/mosquitto/config/password.txt
+```
 
-Expected final structure in Home Assistant:
+## 2. Create Docker Network
+
+```bash
+docker network create ha-net
+```
+
+If it already exists, continue.
+
+## 3. Configure Cloudflare Token
+
+Create `.env` in this folder:
+
+```bash
+nano .env
+```
+
+Add:
+
+```env
+CLOUDFLARED_TOKEN=your_cloudflare_tunnel_token
+```
+
+In Cloudflare Zero Trust, the tunnel service should point to:
 
 ```text
-config/
-  configuration.yaml
-  automations.yaml
-  mqtt/
-    controllino_1.yaml
-    controllino_2.yaml
+http://homeassistant:8123
 ```
 
-## 5. Configure `configuration.yaml`
+## 4. Stop Native Mosquitto
 
-Your Home Assistant `configuration.yaml` should include:
+Only Docker Mosquitto should use port `1883`.
 
-```yaml
-mqtt: !include_dir_merge_list mqtt/
-automation: !include automations.yaml
+```bash
+sudo systemctl disable --now mosquitto.service
+sudo systemctl disable --now arduinoautomation-mosquitto.service
 ```
 
-In this repo that is already set in:
-- [configuration.yaml](/home/lance/Repositories/ArduinoAutomation/HomeAssistant/config/configuration.yaml)
+Check:
 
-What it does:
-- loads all MQTT entity files from the `mqtt/` directory
-- loads automations from `automations.yaml`
+```bash
+sudo ss -ltnp | grep ':1883'
+```
 
-## 6. Understand what each MQTT file provides
+No output is OK before Docker starts. After Docker starts, it should show `docker-proxy`.
 
-### Module 1
+## 5. Start Docker Compose
 
-File:
-- [controllino_1.yaml](/home/lance/Repositories/ArduinoAutomation/HomeAssistant/config/mqtt/controllino_1.yaml)
+```bash
+docker compose up -d
+```
 
-Provides MQTT `light` entities for:
-- living room
-- kitchen
-- bath room
-- kid room
-- working room
-- common area
-- maintenance room
-- bed room
+Check:
 
-### Module 2
+```bash
+docker compose ps
+```
 
-File:
-- [controllino_2.yaml](/home/lance/Repositories/ArduinoAutomation/HomeAssistant/config/mqtt/controllino_2.yaml)
+## 6. Configure Home Assistant MQTT
 
-Provides MQTT entities for:
-- lights
-- fans
-- covers/shades
+Open Home Assistant:
 
-Examples:
-- `light.common_1`
-- `cover.bed_room_shade_1`
-- `fan.bath_room_fan_1`
+```text
+http://<server-ip>:8123
+```
 
-## 7. Make sure MQTT topics match the Arduino modules
+MQTT settings:
 
-The YAML files in Home Assistant must match the MQTT client IDs and topic structure used by the modules.
+```text
+Broker: mosquitto
+Port: 1883
+Username: lancehome
+Password: same password from mosquitto/config/password.txt
+```
 
-This repo currently uses:
-- `LanceControllino1`
-- `LanceControllino2`
+Use `mosquitto` for MQTT in this Compose setup because Home Assistant and Mosquitto are on the same Docker network.
 
-Examples:
-- `controllino/LanceControllino1/status`
-- `controllino/LanceControllino2/light/light_common_1/state`
-- `controllino/LanceControllino2/cover/cover_bed_room_1/set`
+## 7. Arduino MQTT Settings
 
-If you change any of these in Arduino configuration:
-- device hostname
-- MQTT client ID
-- zone names
-- output types
-- output indexes
+Arduino/Controllino modules should use the server LAN IP:
 
-then you must also update the Home Assistant MQTT YAML files.
+```text
+Broker: <server-ip>
+Port: 1883
+Username: lancehome
+Password: same MQTT password
+```
 
-## 8. Restart Home Assistant
+## Useful Checks
 
-After copying the files:
-1. Check configuration in Home Assistant
-2. Restart Home Assistant
+```bash
+docker logs homeassistant
+docker logs mosquitto
+docker logs cloudflared
+```
 
-If everything is correct, the MQTT entities should appear automatically.
+```bash
+docker exec homeassistant nc -zv mosquitto 1883
+docker exec cloudflared getent hosts homeassistant
+```
 
-## 9. Verify the entities
-
-In Home Assistant:
-1. Open `Settings > Devices & Services > Entities`
-2. Search for:
-   - `Living Room`
-   - `Common`
-   - `Shade`
-   - `Fan`
-
-You should see entities from both modules.
-
-You can also verify availability:
-- when the module is online, availability topic publishes `online`
-- when offline, availability topic publishes `offline`
-
-## 10. Update the sample automation
-
-This repo includes one example automation in:
-- [automations.yaml](/home/lance/Repositories/ArduinoAutomation/HomeAssistant/config/automations.yaml)
-
-Current example:
-- turns on selected lights when `person.wife` arrives home after sunset
-
-Before using it, update:
-- the presence entity
-- the target lights if needed
-
-The sample currently expects:
-- `person.wife`
-
-If your entity is different, replace it with something like:
-- `person.your_name`
-- `device_tracker.your_phone`
-
-## 11. If you want to add more entities
-
-When you change output mappings in Arduino:
-- [ModuleConfiguration.h](/home/lance/Repositories/ArduinoAutomation/LanceHome/LanceHomeModule_1/ModuleConfiguration.h)
-- [ModuleConfiguration.h](/home/lance/Repositories/ArduinoAutomation/LanceHome/LanceHomeModule_2/ModuleConfiguration.h)
-
-you may need to add or update matching Home Assistant MQTT entities in:
-- [controllino_1.yaml](/home/lance/Repositories/ArduinoAutomation/HomeAssistant/config/mqtt/controllino_1.yaml)
-- [controllino_2.yaml](/home/lance/Repositories/ArduinoAutomation/HomeAssistant/config/mqtt/controllino_2.yaml)
-
-Typical rule:
-- `LLIGHT` -> `light`
-- `LFAN` -> `fan`
-- `LSHADEUP` / `LSHADEDOWN` pair -> one `cover`
-
-## 12. Troubleshooting
-
-If entities do not appear:
-- confirm MQTT integration is installed and connected
-- confirm Home Assistant loaded `mqtt: !include_dir_merge_list mqtt/`
-- confirm files are inside the real Home Assistant config directory
-- restart Home Assistant after copying changes
-
-If entities appear but do not respond:
-- confirm the Arduino module is online
-- confirm the broker IP, username, password, and port match on both sides
-- confirm the module was provisioned to EEPROM and uploaded in normal runtime mode
-- confirm the MQTT topics in Home Assistant exactly match the module client ID and zone/index names
-
-If entities show unavailable:
-- check the device publishes to:
-  - `controllino/LanceControllino1/status`
-  - `controllino/LanceControllino2/status`
-- confirm network connectivity from the Controllino device to the broker
-
-## 13. Recommended setup order
-
-Best order for first-time setup:
-1. Set up MQTT broker
-2. Configure Arduino module MQTT and Ethernet settings
-3. Provision EEPROM on the module
-4. Upload the module in normal runtime mode
-5. Add MQTT integration in Home Assistant
-6. Copy the Home Assistant config files
-7. Restart Home Assistant
-8. Test lights, fans, and shades
+```bash
+sudo ss -ltnp | grep ':1883'
+```
